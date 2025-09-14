@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Admin</title>
+    <link rel="stylesheet" href="/css/admin.css" />
+    <style>
+      /* small layout helpers for admin page */
+      .admin-shell {
+        display: flex;
+        min-height: 100vh;
+      }
+      .admin-sidebar {
+        width: 220px;
+        background: linear-gradient(
+          180deg,
+          rgba(46, 125, 50, 0.06),
+          rgba(46, 125, 50, 0.03)
+        );
+        padding: 18px;
+        box-shadow: inset -1px 0 0 rgba(0, 0, 0, 0.02);
+      }
+      .admin-sidebar h3 {
+        margin: 6px 0 12px 0;
+        color: var(--accent-700);
+      }
+      .nav-item {
+        display: block;
+        padding: 10px 12px;
+        margin-bottom: 8px;
+        border-radius: 8px;
+        color: var(--accent-700);
+        text-decoration: none;
+      }
+      .nav-item.active,
+      .nav-item:hover {
+        background: rgba(46, 125, 50, 0.08);
+        color: var(--accent-700);
+      }
+      .admin-main {
+        flex: 1;
+        padding: 20px;
+      }
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      .topbar .title {
+        font-size: 20px;
+        font-weight: 600;
+        color: var(--accent-700);
+      }
+      .profile-pill {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        background: var(--accent);
+        color: white;
+        padding: 6px 10px;
+        border-radius: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="admin-shell">
+      <aside class="admin-sidebar">
+        <h3>
+          <a
+            href="/"
+            aria-label="Về trang chủ"
+            style="color: inherit; text-decoration: none"
+            >BusMap Admin</a
+          >
+        </h3>
+        <a href="#" id="tab-users" class="nav-item active"
+          ><span class="icon">U</span> Người dùng</a
+        >
+        <a href="#" id="tab-routes" class="nav-item"
+          ><span class="icon">R</span> Tuyến xe</a
+        >
+        <a href="#" id="tab-stops" class="nav-item"
+          ><span class="icon">S</span> Lượt đi</a
+        >
+        <a href="#" id="tab-returns" class="nav-item"
+          ><span class="icon">↺</span> Lượt về</a
+        >
+        <div style="margin-top: 18px" class="small">Phiên bản: 0.0.1</div>
+      </aside>
+
+      <main class="admin-main">
+        <div class="topbar">
+          <div class="title">Bảng điều khiển quản trị</div>
+          <div class="profile-pill">
+            <span
+              style="
+                width: 28px;
+                height: 28px;
+                border-radius: 50%;
+                display: inline-grid;
+                place-items: center;
+                background: #fff;
+                color: var(--accent);
+                font-weight: 700;
+              "
+              >A</span
+            >
+            Admin
+          </div>
+        </div>
+
+        <div id="admin-root" class="table-card">Đang tải...</div>
+      </main>
+    </div>
+
+    <script>
+      const root = document.getElementById("admin-root");
+      const navItems = document.querySelectorAll(".nav-item");
+
+      function setActive(id) {
+        navItems.forEach((n) => n.classList.remove("active"));
+        const el = document.getElementById(id);
+        if (el) el.classList.add("active");
+      }
+
+      document.getElementById("tab-users").addEventListener("click", (e) => {
+        e.preventDefault();
+        setActive("tab-users");
+        loadUsers();
+      });
+      document.getElementById("tab-routes").addEventListener("click", (e) => {
+        e.preventDefault();
+        setActive("tab-routes");
+        loadRoutes();
+      });
+      document.getElementById("tab-stops").addEventListener("click", (e) => {
+        e.preventDefault();
+        setActive("tab-stops");
+        loadStops();
+      });
+      document.getElementById("tab-returns").addEventListener("click", (e) => {
+        e.preventDefault();
+        setActive("tab-returns");
+        loadReturnStops();
+      });
+
+      async function loadUsers() {
+        root.innerHTML = "Đang tải người dùng...";
+        try {
+          const res = await fetch("/api/admin/users");
+          const list = await res.json();
+          if (!Array.isArray(list) || list.length === 0) {
+            root.innerHTML = "<div>Không có người dùng</div>";
+            return;
+          }
+          let html =
+            "<table><thead><tr><th>ID</th><th>Username</th><th>Full name</th><th>Role</th><th>Thao tác</th></tr></thead><tbody>";
+          list.forEach((u) => {
+            html += `<tr><td>${u.id}</td><td>${u.username}</td><td>${
+              u.fullName || ""
+            }</td><td>${
+              u.role || ""
+            }</td><td><button class="btn btn-del" onclick="delUser(${
+              u.id
+            })">Xóa</button></td></tr>`;
+          });
+          html += "</tbody></table>";
+          root.innerHTML = html;
+        } catch (e) {
+          root.innerText = "Lỗi: " + e.message;
+        }
+      }
+
+      async function delUser(id) {
+        if (!confirm("Xóa user ID=" + id + " ?")) return;
+        const res = await fetch("/api/admin/delete-user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id }),
+        });
+        const j = await res.json();
+        if (j.ok) loadUsers();
+        else alert("Lỗi: " + (j.error || j.msg || ""));
+      }
+
+      // Routes
+      async function loadRoutes() {
+        root.innerHTML = "Đang tải tuyến...";
+        try {
+          const res = await fetch("/api/admin/routes");
+          const list = await res.json();
+          if (!Array.isArray(list) || list.length === 0) {
+            root.innerHTML = "<div>Không có tuyến</div>";
+            return;
+          }
+          let html =
+            '<button class="btn" onclick="showNewRoute()">Tạo tuyến mới</button>';
+          html +=
+            "<table><thead><tr><th>ID</th><th>Mã</th><th>Tên</th><th>Giờ bắt đầu</th><th>Giờ kết thúc</th><th>Thao tác</th></tr></thead><tbody>";
+          list.forEach((r) => {
+            html += `<tr><td>${r.id}</td><td>${r.routeNumber || ""}</td><td>${
+              r.routeName || ""
+            }</td><td>${r.startTime || ""}</td><td>${
+              r.endTime || ""
+            }</td><td><button class="btn" onclick="editRoute(${
+              r.id
+            })">Sửa</button> <button class="btn btn-del" onclick="delRoute(${
+              r.id
+            })">Xóa</button></td></tr>`;
+          });
+          html += "</tbody></table>";
+          root.innerHTML = html;
+        } catch (e) {
+          root.innerText = "Lỗi: " + e.message;
+        }
+      }
+
+      function showNewRoute() {
+        root.innerHTML = `<div><h3>Tạo tuyến</h3><div><input id=\"r-num\" placeholder=\"Mã tuyến\"></div><div><input id=\"r-name\" placeholder=\"Tên tuyến\"></div><div><input id=\"r-start\" placeholder=\"Giờ bắt đầu\"></div><div><input id=\"r-end\" placeholder=\"Giờ kết thúc\"></div><div style=\"margin-top:8px\"><button class=\"btn\" onclick=\"saveRoute()\">Lưu</button> <button class=\"btn\" onclick=\"loadRoutes()\">Hủy</button></div></div>`;
+      }
+
+      async function saveRoute(id) {
+        const payload = {
+          id: id || null,
+          routeNumber: document.getElementById("r-num").value.trim(),
+          routeName: document.getElementById("r-name").value.trim(),
+          startTime: document.getElementById("r-start").value.trim(),
+          endTime: document.getElementById("r-end").value.trim(),
+        };
+        const res = await fetch("/api/admin/save-route", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const j = await res.json();
+        if (j.ok) loadRoutes();
+        else alert("Lỗi: " + (j.msg || j.error || ""));
+      }
+
+      async function editRoute(id) {
+        const res = await fetch("/api/admin/routes");
+        const list = await res.json();
+        const r = list.find((x) => x.id === id);
+        if (!r) return alert("Không tìm thấy");
+        root.innerHTML = `<div><h3>Sửa tuyến</h3><div><input id=\"r-num\" value=\"${
+          r.routeNumber || ""
+        }\" placeholder=\"Mã tuyến\"></div><div><input id=\"r-name\" value=\"${
+          r.routeName || ""
+        }\" placeholder=\"Tên tuyến\"></div><div><input id=\"r-start\" value=\"${
+          r.startTime || ""
+        }\" placeholder=\"Giờ bắt đầu\"></div><div><input id=\"r-end\" value=\"${
+          r.endTime || ""
+        }\" placeholder=\"Giờ kết thúc\"></div><div style=\"margin-top:8px\"><button class=\"btn\" onclick=\"saveRoute(${
+          r.id
+        })\">Lưu</button> <button class=\"btn\" onclick=\"loadRoutes()\">Hủy</button></div></div>`;
+      }
+
+      async function delRoute(id) {
+        if (!confirm("Xóa tuyến ID=" + id + " ?")) return;
+        const res = await fetch("/api/admin/delete-route", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id }),
+        });
+        const j = await res.json();
+        if (j.ok) loadRoutes();
+        else alert("Lỗi: " + (j.error || j.msg || ""));
+      }
+
+      // Stops and return stops simple listing by route
+      async function loadStops(routeId) {
+        root.innerHTML = "Đang tải stops...";
+        try {
+          const res = await fetch(
+            "/api/admin/stops" + (routeId ? "?routeId=" + routeId : "")
+          );
+          const list = await res.json();
+          if (!Array.isArray(list) || list.length === 0) {
+            root.innerHTML = "<div>Không có stops</div>";
+            return;
+          }
+          let html =
+            "<table><thead><tr><th>ID</th><th>Tên</th><th>Lat</th><th>Lng</th><th>Order</th><th>Thao tác</th></tr></thead><tbody>";
+          list.forEach((s) => {
+            html += `<tr><td>${s.id}</td><td>${s.name || ""}</td><td>${
+              s.lat || ""
+            }</td><td>${s.lng || ""}</td><td>${
+              s.stopOrder || ""
+            }</td><td><button class="btn" onclick="editStop(${
+              s.id
+            })">Sửa</button> <button class="btn btn-del" onclick="delStop(${
+              s.id
+            })">Xóa</button></td></tr>`;
+          });
+          html += "</tbody></table>";
+          root.innerHTML = html;
+        } catch (e) {
+          root.innerText = "Lỗi: " + e.message;
+        }
+      }
+
+      function showNewStop() {
+        root.innerHTML = `
+          <div class="form-card">
+            <h3>Tạo stop</h3>
+            <div class="form-row"><div><label class="label">Tên</label><input id="s-name"></div><div><label class="label">Lat</label><input id="s-lat" type="number" step="any"></div></div>
+            <div class="form-row"><div><label class="label">Lng</label><input id="s-lng" type="number" step="any"></div><div><label class="label">Order</label><input id="s-order" type="number"></div></div>
+            <div style="margin-top:10px"><button class="btn" onclick="saveStop()">Lưu</button> <button class="btn" onclick="loadStops()">Hủy</button></div>
+          </div>
+        `;
+      }
+
+      async function editStop(id) {
+        const res = await fetch("/api/admin/stops");
+        const list = await res.json();
+        const s = list.find((x) => x.id === id);
+        if (!s) return alert("Không tìm thấy stop");
+        root.innerHTML = `
+          <div class="form-card">
+            <h3>Sửa stop</h3>
+            <div class="form-row"><div><label class="label">Tên</label><input id="s-name" value="${
+              s.name || ""
+            }"></div><div><label class="label">Lat</label><input id="s-lat" type="number" step="any" value="${
+          s.lat || ""
+        }"></div></div>
+            <div class="form-row"><div><label class="label">Lng</label><input id="s-lng" type="number" step="any" value="${
+              s.lng || ""
+            }"></div><div><label class="label">Order</label><input id="s-order" type="number" value="${
+          s.stopOrder || ""
+        }"></div></div>
+            <div style="margin-top:10px"><button class="btn" onclick="saveStop(${
+              s.id
+            })">Lưu</button> <button class="btn" onclick="loadStops()">Hủy</button></div>
+          </div>
+        `;
+      }
+
+      async function saveStop(id) {
+        const payload = {
+          id: id || null,
+          name: document.getElementById("s-name").value.trim(),
+          lat: parseFloat(document.getElementById("s-lat").value) || null,
+          lng: parseFloat(document.getElementById("s-lng").value) || null,
+          stopOrder: parseInt(document.getElementById("s-order").value) || null,
+        };
+        const res = await fetch("/api/admin/save-stop", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const j = await res.json();
+        if (j.ok) loadStops();
+        else alert("Lỗi: " + (j.msg || j.error || ""));
+      }
+
+      async function delStop(id) {
+        if (!confirm("Xóa stop ID=" + id + " ?")) return;
+        const res = await fetch("/api/admin/delete-stop", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id }),
+        });
+        const j = await res.json();
+        if (j.ok) loadStops();
+        else alert("Lỗi: " + (j.msg || j.error || ""));
+      }
+
+      async function loadReturnStops(routeId) {
+        root.innerHTML = "Đang tải stops-return...";
+        try {
+          const res = await fetch(
+            "/api/admin/stops-return" + (routeId ? "?routeId=" + routeId : "")
+          );
+          const list = await res.json();
+          if (!Array.isArray(list) || list.length === 0) {
+            root.innerHTML = "<div>Không có stops-return</div>";
+            return;
+          }
+          let html =
+            "<table><thead><tr><th>ID</th><th>Tên</th><th>Lat</th><th>Lng</th><th>Order</th><th>Thao tác</th></tr></thead><tbody>";
+          list.forEach((s) => {
+            html += `<tr><td>${s.id}</td><td>${s.name || ""}</td><td>${
+              s.lat || ""
+            }</td><td>${s.lng || ""}</td><td>${
+              s.stopOrder || ""
+            }</td><td><button class="btn" onclick="editReturnStop(${
+              s.id
+            })">Sửa</button> <button class="btn btn-del" onclick="delReturnStop(${
+              s.id
+            })">Xóa</button></td></tr>`;
+          });
+          html += "</tbody></table>";
+          root.innerHTML = html;
+        } catch (e) {
+          root.innerText = "Lỗi: " + e.message;
+        }
+      }
+
+      function showNewReturnStop() {
+        root.innerHTML = `
+          <div class="form-card">
+            <h3>Tạo stop (lượt về)</h3>
+            <div class="form-row"><div><label class="label">Tên</label><input id="rs-name"></div><div><label class="label">Lat</label><input id="rs-lat" type="number" step="any"></div></div>
+            <div class="form-row"><div><label class="label">Lng</label><input id="rs-lng" type="number" step="any"></div><div><label class="label">Order</label><input id="rs-order" type="number"></div></div>
+            <div style="margin-top:10px"><button class="btn" onclick="saveReturnStop()">Lưu</button> <button class="btn" onclick="loadReturnStops()">Hủy</button></div>
+          </div>
+        `;
+      }
+
+      async function editReturnStop(id) {
+        const res = await fetch("/api/admin/stops-return");
+        const list = await res.json();
+        const s = list.find((x) => x.id === id);
+        if (!s) return alert("Không tìm thấy stop");
+        root.innerHTML = `
+          <div class="form-card">
+            <h3>Sửa stop (lượt về)</h3>
+            <div class="form-row"><div><label class="label">Tên</label><input id="rs-name" value="${
+              s.name || ""
+            }"></div><div><label class="label">Lat</label><input id="rs-lat" type="number" step="any" value="${
+          s.lat || ""
+        }"></div></div>
+            <div class="form-row"><div><label class="label">Lng</label><input id="rs-lng" type="number" step="any" value="${
+              s.lng || ""
+            }"></div><div><label class="label">Order</label><input id="rs-order" type="number" value="${
+          s.stopOrder || ""
+        }"></div></div>
+            <div style="margin-top:10px"><button class="btn" onclick="saveReturnStop(${
+              s.id
+            })">Lưu</button> <button class="btn" onclick="loadReturnStops()">Hủy</button></div>
+          </div>
+        `;
+      }
+
+      async function saveReturnStop(id) {
+        const payload = {
+          id: id || null,
+          name: document.getElementById("rs-name").value.trim(),
+          lat: parseFloat(document.getElementById("rs-lat").value) || null,
+          lng: parseFloat(document.getElementById("rs-lng").value) || null,
+          stopOrder:
+            parseInt(document.getElementById("rs-order").value) || null,
+        };
+        const res = await fetch("/api/admin/save-stop-return", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const j = await res.json();
+        if (j.ok) loadReturnStops();
+        else alert("Lỗi: " + (j.msg || j.error || ""));
+      }
+
+      async function delReturnStop(id) {
+        if (!confirm("Xóa stop return ID=" + id + " ?")) return;
+        const res = await fetch("/api/admin/delete-stop-return", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id }),
+        });
+        const j = await res.json();
+        if (j.ok) loadReturnStops();
+        else alert("Lỗi: " + (j.msg || j.error || ""));
+      }
+
+      // initial tab
+      loadUsers();
+    </script>
+  </body>
+</html>

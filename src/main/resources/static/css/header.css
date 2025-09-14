@@ -1,0 +1,231 @@
+:root {
+  --blue: #17c3a2; /* base teal/green (was blue) */
+  --blue-dark: #0aa07d; /* darker teal/green edge (was blue-dark) */
+  --white: #ffffff;
+  --pill-bg: rgba(255, 255, 255, 0.12);
+  --ring: rgba(255, 255, 255, 0.32);
+}
+/* ===== Header base ===== */
+.bm-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: linear-gradient(180deg, var(--blue) 0%, var(--blue-dark) 100%);
+  border-top: 2px solid var(--ring);
+  border-bottom: 2px solid var(--ring);
+  color: var(--white);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
+    "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+}
+.bm-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.bm-logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--pill-bg);
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ring);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.bm-logo svg {
+  width: 22px;
+  height: 22px;
+  fill: var(--white);
+}
+.bm-brand {
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: 0.2px;
+}
+
+/* Right controls */
+.bm-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.btn-outline {
+  padding: 6px 12px;
+  border: 1px solid var(--ring);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--white);
+  font-weight: 600;
+  cursor: pointer;
+}
+.lang-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--pill-bg);
+  border: 1px solid var(--ring);
+}
+.lang-badge {
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 999px;
+  line-height: 1;
+}
+.lang-badge.active {
+  background: var(--white);
+  color: var(--blue-dark);
+}
+.divider {
+  width: 1px;
+  height: 22px;
+  background: var(--ring);
+}
+.city {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--white);
+  color: #0f5132;
+  font-weight: 600;
+}
+.city svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Link đăng nhập */
+.login-link {
+  font-weight: 500;
+  font-size: 14px;
+  color: white;
+  text-decoration: none;
+  padding: 6px 12px;
+  border: white 1px solid;
+  border-radius: 6px;
+  transition: background 0.2s, color 0.2s;
+  display: inline-block;
+}
+
+.login-link:hover {
+  background: rgba(20, 25, 31, 0.1);
+}
+
+/* Trong mobile drawer */
+.drawer-login {
+  display: block;
+  width: 100%;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  padding: 10px 0;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  transition: background 0.2s;
+}
+
+.bm-burger {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--ring);
+  background: var(--pill-bg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 0;
+}
+
+.burger-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.bm-drawer {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
+    "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+}
+
+.drawer-login:hover {
+  background: rgba(20, 25, 31, 0.1);
+}
+
+/* ===== Mobile: hamburger ===== */
+.bm-burger {
+  display: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--ring);
+  background: var(--pill-bg);
+  padding: 5px;
+  cursor: pointer;
+}
+.bm-burger span {
+  display: block;
+  height: 2px;
+  background: var(--white);
+  margin: 4px 0;
+}
+
+/* ===== Drawer ===== */
+.bm-drawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(86vw, 360px);
+  background: linear-gradient(180deg, var(--blue-dark) 0%, var(--blue) 100%);
+  color: var(--white);
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+  box-shadow: -12px 0 24px rgba(0, 0, 0, 0.2);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  z-index: 50;
+}
+.bm-drawer.open {
+  transform: none;
+}
+.bm-drawer .drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.bm-drawer .close {
+  background: transparent;
+  border: 1px solid var(--ring);
+  color: var(--white);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.bm-drawer .stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ===== Responsive rules ===== */
+@media (max-width: 900px) {
+  .bm-right {
+    display: none;
+  }
+  .bm-burger {
+    display: block;
+  }
+}
+@media (min-width: 901px) {
+  .bm-burger {
+    display: none;
+  }
+}

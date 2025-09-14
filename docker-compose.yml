@@ -1,0 +1,17 @@
+version: "3.8"
+services:
+  db:
+    image: mysql:8.0
+    container_name: busmysql
+    environment:
+      MYSQL_ROOT_PASSWORD: "duycuong9812"
+      MYSQL_DATABASE: "bushcm"
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql-init:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+
+volumes:
+  mysql_data:

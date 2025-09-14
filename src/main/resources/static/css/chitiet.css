@@ -1,0 +1,140 @@
+/* Styles for Chi tiết overlay */
+#route-overlay {
+  position: absolute;
+  right: 12px;
+  top: 80px;
+  z-index: 1600;
+  width: 380px;
+  max-width: calc(100% - 24px);
+  height: 72vh;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial;
+}
+#route-overlay .route-overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f1f1f1;
+}
+#route-overlay .route-overlay-title {
+  font-weight: 800;
+  color: #222;
+  font-size: 14px;
+}
+#route-overlay .btn-close-overlay {
+  background: #fff;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+/* Tabs */
+.route-overlay-tabs {
+  display: flex;
+  border-bottom: 1px solid #e6e6e6;
+}
+.route-overlay-tabs .route-tab {
+  flex: 1;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-weight: 700;
+  color: #2e7d32;
+}
+.route-overlay-tabs .route-tab.active {
+  background: #2e7d32;
+  color: #fff;
+  border-radius: 6px;
+  margin: 8px;
+}
+
+.route-overlay-body {
+  padding: 8px;
+  overflow: auto;
+  flex: 1;
+}
+.route-overlay-panel {
+  padding: 6px;
+}
+
+/* Stop rows */
+.route-stop-row {
+  display: flex;
+  align-items: center;
+  padding: 10px 6px;
+  border-bottom: 1px solid #f2f2f2;
+  cursor: pointer;
+}
+.route-stop-row:hover {
+  background: #fafafa;
+}
+.route-stop-index {
+  width: 34px;
+  height: 34px;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 2px solid #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+  font-size: 13px;
+  color: #2e7d32;
+}
+.route-stop-name {
+  font-weight: 700;
+  color: #222;
+}
+.route-stop-sub {
+  font-size: 12px;
+  color: #888;
+  margin-top: 4px;
+}
+
+/* Steps list (detail) */
+.step-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 6px;
+  border-bottom: 1px solid #f6f6f6;
+}
+.step-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  background: #f5f5f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.step-content {
+  flex: 1;
+}
+.step-title {
+  font-weight: 700;
+}
+.step-sub {
+  font-size: 12px;
+  color: #666;
+}
+
+@media (max-width: 480px) {
+  #route-overlay {
+    right: 8px;
+    left: 8px;
+    width: auto;
+    height: 65vh;
+  }
+  .route-overlay-tabs .route-tab.active {
+    margin: 6px;
+  }
+}

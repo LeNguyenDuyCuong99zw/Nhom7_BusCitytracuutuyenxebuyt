@@ -1,0 +1,3437 @@
+<section th:fragment="homeContent">
+  <div id="sidebar">
+    <div id="sidebar-tabs">
+      <button class="sidebar-tab active" onclick="showSidebarTab('search')">
+        TRA CỨU
+      </button>
+      <button class="sidebar-tab" onclick="showSidebarTab('route')">
+        TÌM ĐƯỜNG
+      </button>
+    </div>
+    <div id="sidebar-content">
+      <div id="search-tab" class="sidebar-tab-content">
+        <input type="text" id="route-search" placeholder="Tìm tuyến xe..." />
+        <div id="route-list"></div>
+      </div>
+      <div id="route-tab" class="sidebar-tab-content" style="display: none">
+        <div class="route-search-card">
+          <div class="route-input-row">
+            <div class="route-input-icon start-icon">📍</div>
+            <input id="start" type="text" placeholder="Chọn điểm xuất phát" />
+            <button id="swapBtn" class="swap-btn" title="Đổi chiều">⇅</button>
+          </div>
+          <div class="route-input-row">
+            <div class="route-input-icon end-icon">📌</div>
+            <input id="end" type="text" placeholder="Chọn điểm kết thúc" />
+          </div>
+          <div class="route-actions-row">
+            <div class="toggle-row">
+              <label class="switch">
+                <input type="checkbox" id="activeToggle" checked />
+                <span class="slider"></span>
+              </label>
+              <span class="toggle-label">Tuyến hoạt động</span>
+            </div>
+            <div class="route-count">
+              <div class="count-label">SỐ TUYẾN ĐI TỐI ĐA</div>
+              <div class="count-buttons">
+                <button class="count-btn" data-count="1">1 Tuyến</button>
+                <button class="count-btn active" data-count="2">2 Tuyến</button>
+                <button class="count-btn" data-count="3">3 Tuyến</button>
+              </div>
+            </div>
+          </div>
+          <div class="route-search-actions">
+            <button class="find-btn" onclick="findRoute()">Tìm đường</button>
+            <a class="back-home" href="/">Về trang chủ</a>
+          </div>
+        </div>
+      </div>
+      <div id="route-detail" style="display: none"></div>
+    </div>
+  </div>
+  <div
+    id="map"
+    style="
+      width: calc(100% - 350px);
+      height: 600px;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+      margin-left: 350px;
+      position: absolute;
+      top: 0;
+      left: 0;
+    "
+  ></div>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    let map,
+      startMarker,
+      endMarker,
+      busMarkers = [],
+      routeLine;
+    let connectorLines = [];
+    let currentDirection = "go"; // "go" = lượt đi, "return" = lượt về
+    let currentRoute = null;
+
+    // Đổi theme bản đồ sang Carto Voyager
+    function initMap() {
+      map = L.map("map").setView([10.762622, 106.660172], 13);
+      L.tileLayer(
+        "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+        {
+          attribution: "© CartoDB © OpenStreetMap",
+          maxZoom: 19,
+        }
+      ).addTo(map);
+      // Ẩn nút zoom mặc định của Leaflet
+      map.zoomControl.remove();
+      loadRouteList();
+    }
+
+    window.onload = initMap;
+
+    // Toggle sidebar tabs (TRA CỨU / TÌM ĐƯỜNG)
+    function showSidebarTab(tab) {
+      try {
+        const tabButtons = document.querySelectorAll(
+          "#sidebar-tabs .sidebar-tab"
+        );
+        if (tabButtons && tabButtons.length > 0) {
+          tabButtons.forEach((b, i) => {
+            b.classList.remove("active");
+            if ((tab === "search" && i === 0) || (tab === "route" && i === 1)) {
+              b.classList.add("active");
+            }
+          });
+        }
+
+        const searchTab = document.getElementById("search-tab");
+        const routeTab = document.getElementById("route-tab");
+        if (searchTab)
+          searchTab.style.display = tab === "search" ? "block" : "none";
+        if (routeTab)
+          routeTab.style.display = tab === "route" ? "block" : "none";
+
+        // hide route detail when switching tabs
+        const detail = document.getElementById("route-detail");
+        if (detail) detail.style.display = "none";
+
+        // focus start input when opening route tab
+        if (tab === "route") {
+          setTimeout(() => {
+            const s = document.getElementById("start");
+            if (s) s.focus();
+          }, 80);
+        }
+        // when opening the route (TÌM ĐƯỜNG) tab, reset any previous search/plan UI
+        if (tab === "route") {
+          try {
+            resetSearchUI();
+          } catch (e) {
+            console.warn("resetSearchUI on showSidebarTab failed", e);
+          }
+        }
+
+        // when opening the search (TRA CỨU) tab, reset any planner/overlay UI as well
+        if (tab === "search") {
+          try {
+            resetSearchUI();
+          } catch (e) {
+            console.warn("resetSearchUI on showSidebarTab failed", e);
+          }
+          // focus route search input in the search tab
+          setTimeout(() => {
+            const rs = document.getElementById("route-search");
+            if (rs) rs.focus();
+          }, 80);
+        }
+      } catch (e) {
+        console.error("showSidebarTab error", e);
+      }
+    }
+
+    // Sidebar: Tải danh sách tuyến và render
+    function loadRouteList() {
+      fetch("/api/bus/routes")
+        .then((res) => res.json())
+        .then((routes) => {
+          const listDiv = document.getElementById("route-list");
+          listDiv.innerHTML = "<h3>Tra cứu tuyến xe</h3>";
+          routes.forEach((route) => {
+            const div = document.createElement("div");
+            div.className = "route-card";
+            div.innerHTML = `
+              <div class="route-card-icon">
+                <img src="https://img.icons8.com/ios-filled/50/4CAF50/bus.png" width="32"/>
+              </div>
+              <div class="route-card-info">
+                <div class="route-card-title">Tuyến số <span class="route-number">${
+                  route.routeNumber
+                }</span></div>
+                <div class="route-card-desc">${route.routeName}</div>
+                <div class="route-card-meta">
+                  <span><img src="https://img.icons8.com/ios-filled/16/000000/clock.png"/> ${
+                    route.startTime || ""
+                  } - ${route.endTime || ""}</span>
+                  <span style="margin-left:16px"><img src="https://img.icons8.com/ios-filled/16/000000/money.png"/> ${
+                    route.fare || ""
+                  }</span>
+                </div>
+              </div>
+            `;
+            div.onclick = () => showRouteDetail(route);
+            listDiv.appendChild(div);
+          });
+        });
+    }
+
+    function showRouteDetail(route) {
+      currentDirection = "go";
+      currentRoute = route;
+      renderRouteDetail(route, currentDirection);
+    }
+
+    // Sửa giao diện timeline, highlight trạm đang chọn
+    function renderRouteDetail(route, direction) {
+      const sidebarTabs = document.getElementById("sidebar-tabs");
+      if (sidebarTabs) sidebarTabs.style.display = "none";
+      const routeSearch = document.getElementById("route-search");
+      if (routeSearch) routeSearch.style.display = "none";
+      const apiUrl =
+        direction === "go"
+          ? `/api/bus/route/${route.id}/stops`
+          : `/api/bus/route/${route.id}/stops-return`;
+      fetch(apiUrl)
+        .then((res) => res.json())
+        .then((stops) => {
+          const detailDiv = document.getElementById("route-detail");
+          detailDiv.style.display = "block";
+          let selectedStopIdx = null;
+          detailDiv.innerHTML = `
+    <div style=\"display:flex;align-items:center;margin-bottom:4px\">
+      <button onclick=\"hideRouteDetail()\" style=\"background:none;border:none;font-size:18px;color:#009688;cursor:pointer;margin-right:8px\">←</button>
+      <h3 style=\"margin:0;font-size:22px;color:#222;font-weight:bold\">Tuyến số ${
+        route.routeNumber
+      }</h3>
+    </div>
+    <div style=\"margin-bottom:10px;color:#666;font-size:16px\">${
+      route.routeName
+    }</div>
+    <div class=\"direction-tabs\" style=\"margin-bottom:10px\">
+      <button class=\"direction-tab${
+        direction === "go" ? " active" : ""
+      }\" onclick=\"switchDirection('go')\">Xem lượt đi</button>
+      <button class=\"direction-tab${
+        direction === "return" ? " active" : ""
+      }\" onclick=\"switchDirection('return')\">Xem lượt về</button>
+    </div>
+    <div class=\"route-detail-tabs\" style=\"margin-bottom:10px\">
+      <button class=\"route-detail-tab schedule-tab\" onclick=\"switchRouteDetailTab('schedule')\">Biểu đồ giờ</button>
+      <button class=\"route-detail-tab stop-tab active\" onclick=\"switchRouteDetailTab('stops')\">Trạm dừng</button>
+      <button class=\"route-detail-tab\">Thông tin</button>
+      <button class=\"route-detail-tab\">Đánh giá</button>
+    </div>
+    <div id=\"schedule-panel\" style=\"display:none;margin-top:12px\"></div>
+    <div id=\"stops-panel\" class=\"timeline\" style=\"margin-top:18px\">
+      ${stops
+        .map(
+          (s, i) => `
+        <div class=\"timeline-item${
+          i === stops.length - 1 ? " last" : ""
+        }\" onclick=\"focusStopOnMap(${i})\" style=\"cursor:pointer\">
+          <div class=\"timeline-dot${i === 0 ? " selected" : " gray"}\"></div>
+          <div class=\"timeline-content\" style=\"font-size:14px;color:#222;padding-bottom:8px\">${
+            s.name
+          }</div>
+        </div>
+      `
+        )
+        .join("")}
+    </div>
+  `;
+
+          // add schedule styles if not present
+          if (!document.getElementById("schedule-style")) {
+            const scss = document.createElement("style");
+            scss.id = "schedule-style";
+            scss.innerHTML = `
+              /* compact schedule styles (scoped to #schedule-panel) */
+              /* force exactly 6 columns per row for schedule grid; reduce cell frame but keep text size */
+              #schedule-panel .schedule-grid{display:grid;grid-template-columns:repeat(6,minmax(40px,1fr));gap:6px}
+              /* responsive: fewer columns on small screens */
+              @media (max-width:600px){#schedule-panel .schedule-grid{grid-template-columns:repeat(3,minmax(36px,1fr));gap:6px}}
+              /* reduce padding / min width so the cell frame is smaller while font-size remains 11px */
+              #schedule-panel .time-cell{display:inline-flex;align-items:center;justify-content:center;padding:2px 6px;border-radius:5px;background:#fafafa;color:#222;font-size:11px;min-height:28px}
+              #schedule-panel .time-cell.past{opacity:0.45;background:#f2f2f2;color:#999}
+              #schedule-panel .time-cell.upcoming{background:#00C853;color:#fff}
+              #schedule-panel .time-cell.next{background:#00796B;color:#fff}
+              #schedule-panel .schedule-header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;font-size:12px}
+              #schedule-panel .schedule-nav{display:flex;gap:6px;align-items:center}
+              #schedule-panel .schedule-day-btn{padding:3px 6px;border-radius:6px;border:1px solid #e6e6e6;background:#fff;cursor:pointer;font-size:11px}
+              #schedule-panel .schedule-day-btn.active{background:#00C853;color:#fff;border-color:#00C853}
+              #schedule-panel #schedule-nav-buttons{overflow:auto;white-space:nowrap}
+              /* route detail tabs: force horizontal compact layout */
+              .route-detail-tabs{display:flex;gap:8px;align-items:center;flex-wrap:nowrap;margin-bottom:8px;overflow:auto}
+              .route-detail-tab{padding:6px 10px;border-radius:8px;background:transparent;border:1px solid transparent;cursor:pointer;font-size:13px;color:#444;white-space:nowrap}
+              .route-detail-tab.active{background:#f6f6f6;border-color:#e6e6e6}
+              /* make tabs and labels smaller so the whole block is compact */
+              .direction-tabs button,.route-detail-tabs .route-detail-tab{font-size:13px;padding:6px 10px}
+              /* timeline smaller text */
+              .timeline .timeline-content{font-size:14px}
+          /* inline schedule panel: full width table-like grid, no internal scroll */
+          #schedule-panel{width:100%;background:transparent;padding:6px 4px;border-radius:6px}
+          /* keep sidebar from changing page height: make it internally scrollable so showing schedule
+            doesn't push/scroll the whole page (which hides site header). Adjust the 80px if your header
+            is taller. */
+              #sidebar{max-height:calc(100vh - 120px);overflow:auto;padding-right:8px}
+          /* ensure route-detail doesn't use absolute positioning that can overlap header */
+          #route-detail{position:relative}
+              /* keep site header on top if present */
+              header, .header, .topbar {position:relative;z-index:10000}
+              #schedule-grid-wrap{width:100%}
+              #schedule-panel .schedule-grid{width:100%}
+              /* remove overlay close button style (no overlay now) */
+              @media (max-width:700px){#schedule-panel{padding:6px 2px}}
+              `;
+            document.head.appendChild(scss);
+          }
+
+          // attach event handlers for the tabs (schedule/stop)
+          window.switchRouteDetailTab = function (tab) {
+            try {
+              document
+                .querySelectorAll(".route-detail-tab")
+                .forEach((b) => b.classList.remove("active"));
+              const els = document.querySelectorAll(".route-detail-tab");
+              // find the matching tab by text or class
+              els.forEach((el) => {
+                if (
+                  (tab === "schedule" &&
+                    el.classList.contains("schedule-tab")) ||
+                  (tab === "stops" && el.classList.contains("stop-tab"))
+                )
+                  el.classList.add("active");
+              });
+              const sp = document.getElementById("schedule-panel");
+              const st = document.getElementById("stops-panel");
+              if (sp && st) {
+                if (tab === "schedule") {
+                  sp.style.display = "block";
+                  st.style.display = "none";
+                  showSchedule();
+                } else {
+                  // hide schedule panel when switching away
+                  try {
+                    sp.style.display = "none";
+                  } catch (e) {}
+                  st.style.display = "block";
+                }
+              }
+            } catch (e) {
+              console.warn("switchRouteDetailTab", e);
+            }
+          };
+
+          // showSchedule will fetch route data and render timetable into #schedule-panel
+          window.showSchedule = async function () {
+            try {
+              const panel = document.getElementById("schedule-panel");
+              if (!panel) return;
+              // render schedule inline inside route-detail (no overlay)
+              panel.style.display = "block";
+              panel.style.background = "transparent";
+              panel.style.padding = "6px 4px";
+              panel.style.borderRadius = "6px";
+              panel.style.boxShadow = "none";
+              // allow the parent to control layout; don't set maxHeight/overflow here
+              const detail = document.getElementById("route-detail");
+              if (detail) {
+                detail.style.position = "static";
+              }
+
+              panel.innerHTML =
+                '<div style="padding:6px 8px;color:#666">Đang tải biểu đồ giờ...</div>';
+              // try to find route data from server list
+              let routeObj = null;
+              try {
+                const routes = await fetch("/api/bus/routes").then((r) =>
+                  r.json()
+                );
+                if (routes && Array.isArray(routes)) {
+                  routeObj = routes.find(
+                    (r) =>
+                      String(r.id) === String(currentRoute.id) ||
+                      String(r.routeNumber) === String(currentRoute.routeNumber)
+                  );
+                }
+              } catch (e) {}
+
+              // Normalize schedule data into groups: array of arrays + labels
+              let groups = [];
+              let labels = [];
+              const makeDefaultLabel = (i) => {
+                if (i === 0) return "Hôm nay";
+                if (i === 1) return "Ngày mai";
+                return `Ca ${i + 1}`;
+              };
+
+              if (routeObj && routeObj.scheduleChart) {
+                // scheduleChart may be JSON array, JSON object with named groups,
+                // or newline-separated text possibly with blank-line groups
+                try {
+                  const parsed = JSON.parse(routeObj.scheduleChart);
+                  if (Array.isArray(parsed)) {
+                    // array could be flat times or array-of-groups
+                    if (
+                      parsed.length > 0 &&
+                      parsed.every((el) => Array.isArray(el))
+                    ) {
+                      groups = parsed.map((g) =>
+                        g.map((s) => String(s).trim()).filter(Boolean)
+                      );
+                      labels = groups.map((_, i) => makeDefaultLabel(i));
+                    } else {
+                      // flat array -> single group
+                      groups = [
+                        parsed.map((s) => String(s).trim()).filter(Boolean),
+                      ];
+                      labels = [makeDefaultLabel(0)];
+                    }
+                  } else if (parsed && typeof parsed === "object") {
+                    // object with named groups
+                    Object.keys(parsed).forEach((k) => {
+                      const v = parsed[k];
+                      if (Array.isArray(v))
+                        groups.push(
+                          v.map((s) => String(s).trim()).filter(Boolean)
+                        );
+                      else if (typeof v === "string")
+                        groups.push(
+                          String(v)
+                            .split(/[,\n]+/)
+                            .map((s) => s.trim())
+                            .filter(Boolean)
+                        );
+                      else groups.push([]);
+                      labels.push(k);
+                    });
+                  }
+                } catch (e) {
+                  // fallback: split by double newline to groups, then each group by lines/commas
+                  const raw = String(routeObj.scheduleChart || "").trim();
+                  if (raw.indexOf("\n\n") !== -1) {
+                    const parts = raw.split(/\n\s*\n/);
+                    parts.forEach((p, i) => {
+                      const arr = p
+                        .split(/[,\n]+/)
+                        .map((s) => s.trim())
+                        .filter(Boolean);
+                      groups.push(arr);
+                      labels.push(makeDefaultLabel(i));
+                    });
+                  } else {
+                    const arr = raw
+                      .split(/[,\n]+/)
+                      .map((s) => s.trim())
+                      .filter(Boolean);
+                    groups = [arr];
+                    labels = [makeDefaultLabel(0)];
+                  }
+                }
+              }
+
+              // If no groups parsed, try to generate from start/end/headway into one group
+              if (!groups || groups.length === 0) {
+                let times = [];
+                if (routeObj) {
+                  const st =
+                    routeObj.startTime ||
+                    routeObj.start_time ||
+                    currentRoute.startTime;
+                  const et =
+                    routeObj.endTime ||
+                    routeObj.end_time ||
+                    currentRoute.endTime;
+                  const headway =
+                    routeObj.headwayMinutes || routeObj.headway_minutes || 15;
+                  function toMin(t) {
+                    if (!t) return null;
+
+                    if (m.length < 2)
+                      return parseInt(m[0]) * 60 + parseInt(m[1]);
+                    return parseInt(m[0]) * 60 + parseInt(m[1]);
+                  }
+                  function fmt(m) {
+                    const hh = Math.floor(m / 60);
+                    const mm = m % 60;
+                    return (
+                      (hh < 10 ? "0" + hh : hh) +
+                      ":" +
+                      (mm < 10 ? "0" + mm : mm)
+                    );
+                  }
+                  const sMin = toMin(st);
+                  const eMin = toMin(et);
+                  if (
+                    sMin !== null &&
+                    eMin !== null &&
+                    !isNaN(sMin) &&
+                    !isNaN(eMin) &&
+                    headway > 0
+                  ) {
+                    for (let tm = sMin; tm <= eMin; tm += Number(headway)) {
+                      times.push(fmt(tm));
+                    }
+                  }
+                }
+                if (times.length > 0) {
+                  groups = [times];
+                  labels = [makeDefaultLabel(0)];
+                }
+              }
+
+              if (!groups || groups.length === 0) {
+                panel.innerHTML =
+                  '<div style="padding:12px;color:#666">Không có dữ liệu biểu đồ giờ cho tuyến này.</div>';
+                return;
+              }
+
+              // create navigation and grid
+              let html =
+                '<div class="schedule-header"><div style="font-weight:800">Biểu đồ giờ</div><div class="schedule-nav">';
+              if (groups.length > 1) {
+                html += `<button class="schedule-day-btn" id="sched-prev">◀</button>`;
+              }
+              html +=
+                '<div id="schedule-nav-buttons" style="display:flex;gap:8px;align-items:center;margin:0 8px">';
+              labels.forEach((lab, i) => {
+                html += `<button class="schedule-day-btn" id="sched-btn-${i}" onclick="selectScheduleGroup(${i})">${lab}</button>`;
+              });
+              html += "</div>";
+              if (groups.length > 1) {
+                html += `<button class="schedule-day-btn" id="sched-next">▶</button>`;
+              }
+              html += "</div></div>";
+
+              html += '<div id="schedule-grid-wrap"></div>';
+              panel.innerHTML = html;
+
+              // attach navigation functions
+              window._scheduleGroups = groups;
+              window._scheduleLabels = labels;
+              window._selectedScheduleGroup = 0;
+
+              window.selectScheduleGroup = function (idx) {
+                try {
+                  if (!window._scheduleGroups || !window._scheduleGroups[idx])
+                    return;
+                  window._selectedScheduleGroup = idx;
+                  // update active button styles
+                  labels.forEach((_, i) => {
+                    const b = document.getElementById(`sched-btn-${i}`);
+                    if (b) b.classList.toggle("active", i === idx);
+                  });
+                  // render grid
+                  const wrap = document.getElementById("schedule-grid-wrap");
+                  if (!wrap) return;
+                  const times = window._scheduleGroups[idx] || [];
+                  if (!times || times.length === 0) {
+                    wrap.innerHTML =
+                      '<div style="padding:12px;color:#666">Không có dữ liệu cho ca này.</div>';
+                    return;
+                  }
+                  // classify times relative to now
+                  const now = new Date();
+                  // if label contains 'Ngày mai' or index > 0, adjust day offset
+                  const dayOffset = idx === 0 ? 0 : idx; // simple mapping: idx 1 -> tomorrow, idx 2+ -> +2 days
+                  const today = new Date(
+                    now.getFullYear(),
+                    now.getMonth(),
+                    now.getDate()
+                  );
+                  const baseDate = new Date(
+                    today.getTime() + dayOffset * 24 * 3600 * 1000
+                  );
+
+                  let grid = '<div class="schedule-grid">';
+                  // find first upcoming index
+                  let firstUpcoming = -1;
+                  times.forEach((t, i) => {
+                    // parse HH:MM
+                    const m = String(t).split(":");
+                    let hh = parseInt(m[0], 10);
+                    let mm = m.length > 1 ? parseInt(m[1], 10) : 0;
+                    if (isNaN(hh)) hh = 0;
+                    if (isNaN(mm)) mm = 0;
+                    const dt = new Date(
+                      baseDate.getFullYear(),
+                      baseDate.getMonth(),
+                      baseDate.getDate(),
+                      hh,
+                      mm
+                    );
+                    if (dt.getTime() > now.getTime() && firstUpcoming === -1)
+                      firstUpcoming = i;
+                    let cls = "";
+                    if (dt.getTime() <= now.getTime()) cls = "past";
+                    else cls = "upcoming";
+                    grid += `<div class="time-cell ${cls}" data-time="${t}" data-idx="${i}">${t}</div>`;
+                  });
+                  grid += "</div>";
+                  wrap.innerHTML = grid;
+                  // highlight the next upcoming if any
+                  if (firstUpcoming >= 0) {
+                    const cell = wrap.querySelector(
+                      `.time-cell[data-idx="${firstUpcoming}"]`
+                    );
+                    if (cell) {
+                      cell.classList.remove("upcoming");
+                      cell.classList.add("next");
+                    }
+                  }
+                  // ensure the active button is visible (scroll into view)
+                  const activeBtn = document.getElementById(`sched-btn-${idx}`);
+                  if (activeBtn && activeBtn.scrollIntoView)
+                    activeBtn.scrollIntoView({
+                      behavior: "smooth",
+                      inline: "center",
+                    });
+                } catch (e) {
+                  console.warn("selectScheduleGroup", e);
+                }
+              };
+
+              // (overlay close helper removed; schedule now renders inline)
+
+              if (groups.length > 1) {
+                document
+                  .getElementById("sched-prev")
+                  .addEventListener("click", function () {
+                    const i = Math.max(0, window._selectedScheduleGroup - 1);
+                    window.selectScheduleGroup(i);
+                  });
+                document
+                  .getElementById("sched-next")
+                  .addEventListener("click", function () {
+                    const i = Math.min(
+                      window._scheduleGroups.length - 1,
+                      window._selectedScheduleGroup + 1
+                    );
+                    window.selectScheduleGroup(i);
+                  });
+              }
+
+              // select first group by default
+              window.selectScheduleGroup(0);
+            } catch (e) {
+              console.warn("showSchedule error", e);
+            }
+          };
+          showRouteWithDirection(route.id, direction, stops);
+          document.getElementById("route-list").style.display = "none";
+          window.focusStopOnMap = function (idx) {
+            selectedStopIdx = idx;
+            const stop = stops[idx];
+            if (stop && stop.lat && stop.lng) {
+              map.setView([stop.lat, stop.lng], 17, { animate: true });
+              busMarkers[idx].openPopup();
+            }
+            // Highlight timeline-dot
+            document.querySelectorAll(".timeline-dot").forEach((el, i) => {
+              if (i === idx) el.classList.add("selected");
+              else el.classList.remove("selected");
+            });
+          };
+        });
+    }
+
+    function hideRouteDetail() {
+      document.getElementById("route-detail").style.display = "none";
+      const sidebarTabs = document.getElementById("sidebar-tabs");
+      if (sidebarTabs) sidebarTabs.style.display = "flex";
+      const routeSearch = document.getElementById("route-search");
+      if (routeSearch) routeSearch.style.display = "block";
+      document.getElementById("route-list").style.display = "block";
+    }
+
+    function switchDirection(direction) {
+      currentDirection = direction;
+      renderRouteDetail(currentRoute, direction);
+    }
+
+    // Sửa showRouteWithDirection để nhận stops và lưu busMarkers đúng thứ tự
+    function showRouteWithDirection(routeId, direction, stopsData) {
+      if (routeLine) map.removeLayer(routeLine);
+      busMarkers.forEach((m) => map.removeLayer(m));
+      busMarkers = [];
+      connectorLines && connectorLines.forEach((l) => map.removeLayer(l));
+      connectorLines = [];
+      const apiUrl =
+        direction === "go"
+          ? `/api/bus/route/${routeId}/stops`
+          : `/api/bus/route/${routeId}/stops-return`;
+      const fetchStops = stopsData
+        ? Promise.resolve(stopsData)
+        : fetch(apiUrl).then((res) => res.json());
+      fetchStops.then((stops) => {
+        if (!stops || stops.length === 0) {
+          alert("Không có dữ liệu trạm cho tuyến này!");
+          return;
+        }
+        const coords = stops.map((s) => [s.lng, s.lat]);
+        fetch(
+          "https://api.openrouteservice.org/v2/directions/driving-car/geojson",
+          {
+            method: "POST",
+            headers: {
+              Authorization:
+                "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImViNTU5Yzk4NzEzODRmMGRhYzBmOGRmYmI0OWYzNzEyIiwiaCI6Im11cm11cjY0In0=",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ coordinates: coords }),
+          }
+        )
+          .then((res) => res.json())
+          .then((data) => {
+            if (routeLine) map.removeLayer(routeLine);
+            const routeColor = direction === "return" ? "#2196F3" : "#00C853";
+            routeLine = L.geoJSON(data, {
+              style: { color: routeColor, weight: 6 },
+            }).addTo(map);
+            map.fitBounds(routeLine.getBounds());
+            stops.forEach((stop, idx) => {
+              const marker = L.marker([stop.lat, stop.lng], {
+                icon: createBusStopIcon(map.getZoom()),
+                title: stop.name,
+              })
+                .addTo(map)
+                .bindPopup(stop.name);
+              busMarkers[idx] = marker;
+              // Vẽ đoạn nối từ đường thực tế vào marker
+              let nearest = null,
+                minDist = Infinity;
+              const routeCoords = data.features[0].geometry.coordinates;
+              routeCoords.forEach((coord) => {
+                const dist = Math.sqrt(
+                  Math.pow(coord[1] - stop.lat, 2) +
+                    Math.pow(coord[0] - stop.lng, 2)
+                );
+                if (dist < minDist) {
+                  minDist = dist;
+                  nearest = coord;
+                }
+              });
+              if (nearest) {
+                const connector = L.polyline(
+                  [
+                    [stop.lat, stop.lng],
+                    [nearest[1], nearest[0]],
+                  ],
+                  {
+                    color: routeColor,
+                    weight: 3,
+                    dashArray: "4,6",
+                  }
+                ).addTo(map);
+                connectorLines.push(connector);
+              }
+            });
+          })
+          .catch(() => {
+            alert(
+              "Không thể lấy dữ liệu đường đi thực tế, vui lòng kiểm tra API key hoặc kết nối mạng!"
+            );
+          });
+      });
+      // Lắng nghe sự kiện zoom để cập nhật icon
+      map.on("zoomend", function () {
+        busMarkers.forEach((marker, idx) => {
+          marker.setIcon(createBusStopIcon(map.getZoom()));
+        });
+      });
+    }
+
+    function setCurrentLocation(inputId) {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          function (position) {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            fetch(
+              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+            )
+              .then((res) => res.json())
+              .then((data) => {
+                document.getElementById(inputId).value =
+                  data.display_name || `${lat},${lng}`;
+              })
+              .catch(() => {
+                alert("Không lấy được địa chỉ từ vị trí hiện tại!");
+              });
+          },
+          function () {
+            alert("Không thể truy cập vị trí hiện tại!");
+          }
+        );
+      } else {
+        alert("Trình duyệt không hỗ trợ định vị.");
+      }
+    }
+
+    function geocode(address, callback) {
+      fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+          address
+        )}&countrycodes=vn&limit=1`
+      )
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && data.length > 0) {
+            callback({
+              lat: parseFloat(data[0].lat),
+              lng: parseFloat(data[0].lon),
+            });
+          } else {
+            callback(null);
+          }
+        })
+        .catch(() => callback(null));
+    }
+    // promisified geocode for easier async/await usage
+    function geocodePromise(address) {
+      return new Promise((resolve) => {
+        geocode(address, (loc) => resolve(loc));
+      });
+    }
+
+    function resolveInputToLatLng(id) {
+      return new Promise(async (resolve) => {
+        const el = document.getElementById(id);
+        if (!el) return resolve(null);
+        // prefer dataset lat/lng set by suggestion click
+        if (el.dataset && el.dataset.lat && el.dataset.lng) {
+          return resolve({
+            lat: parseFloat(el.dataset.lat),
+            lng: parseFloat(el.dataset.lng),
+          });
+        }
+        // fallback to geocoding the text
+        if (el.value && el.value.trim().length > 0) {
+          const loc = await geocodePromise(el.value.trim());
+          return resolve(loc);
+        }
+        return resolve(null);
+      });
+    }
+
+    // render plan returned by /api/bus/plan
+    let planLayers = [];
+    let auxiliaryMarkers = [];
+    let planWalkLine = null; // walking connector from startPickup -> first boarding
+    // preserveMarkers: when true, keep global startMarker/endMarker visible (do not remove them)
+    function clearPlanLayers(preserveMarkers) {
+      if (routeLine) {
+        try {
+          map.removeLayer(routeLine);
+        } catch (_) {}
+        routeLine = null;
+      }
+      planLayers.forEach((l) => {
+        try {
+          map.removeLayer(l);
+        } catch (_) {}
+      });
+      planLayers = [];
+      if (Array.isArray(auxiliaryMarkers)) {
+        if (preserveMarkers) {
+          // remove only markers that are not the main start/end markers
+          auxiliaryMarkers = auxiliaryMarkers.filter((m) => {
+            if (m === startMarker || m === endMarker) return true; // keep
+            try {
+              map.removeLayer(m);
+            } catch (_) {}
+            return false;
+          });
+        } else {
+          auxiliaryMarkers.forEach((m) => {
+            try {
+              map.removeLayer(m);
+            } catch (_) {}
+          });
+          auxiliaryMarkers = [];
+        }
+      }
+      // remove plan walking connector if present
+      try {
+        if (planWalkLine) {
+          if (Array.isArray(planWalkLine))
+            planWalkLine.forEach((l) => map.removeLayer(l));
+          else map.removeLayer(planWalkLine);
+        }
+      } catch (_) {}
+      planWalkLine = null;
+    }
+
+    function renderPlan(plan) {
+      clearPlanLayers();
+      if (!plan) return;
+      const steps = plan.steps || [];
+      const bounds = [];
+
+      steps.forEach((s, idx) => {
+        const from = s.from || s.fromCoord || null;
+        const to = s.to || s.toCoord || null;
+        // normalize coordinates if array of [lat,lng]
+        const p1 = Array.isArray(from) ? [from[0], from[1]] : null;
+        const p2 = Array.isArray(to) ? [to[0], to[1]] : null;
+
+        if (p1) bounds.push(p1);
+        if (p2) bounds.push(p2);
+
+        if (s.type === "walk") {
+          // In the normal plan view we do not draw the heavy white-centered walking
+          // ribbon. Keep the map lighter by drawing only a thin dashed guide (or skip).
+          // The full white + colored walking connector is drawn only when the user
+          // opens the detailed overlay (Chi tiết).
+          if (p1 && p2) {
+            const guide = L.polyline([p1, p2], {
+              color: "#00C853",
+              weight: 2,
+              dashArray: "6,8",
+              opacity: 0.9,
+            }).addTo(map);
+            planLayers.push(guide);
+          }
+        } else if (s.type === "bus") {
+          // use blue color for bus segments; draw a thicker solid line
+          if (p1 && p2) {
+            const poly = L.polyline([p1, p2], {
+              color: "#2196F3",
+              weight: 6,
+            }).addTo(map);
+            planLayers.push(poly);
+          }
+          // boarding marker
+          if (p1) {
+            const board = L.marker(p1, {
+              icon: L.icon({
+                iconUrl: "https://img.icons8.com/windows/48/000000/bus.png",
+                iconSize: [28, 28],
+                iconAnchor: [14, 28],
+              }),
+            })
+              .addTo(map)
+              .bindPopup(`Lên tuyến ${s.route || ""}`);
+            auxiliaryMarkers.push(board);
+          }
+          if (p2) {
+            const alight = L.marker(p2, {
+              icon: L.icon({
+                iconUrl:
+                  "https://maps.google.com/mapfiles/ms/icons/red-dot.png",
+                iconSize: [28, 28],
+                iconAnchor: [14, 28],
+              }),
+            })
+              .addTo(map)
+              .bindPopup("Xuống trạm");
+            auxiliaryMarkers.push(alight);
+          }
+        } else if (s.type === "note") {
+          // show note as a toast or alert for now
+          console.info("planner note:", s.desc);
+        }
+      });
+
+      // add start/end markers if available in result
+      if (plan.startPickup) {
+        const sp = plan.startPickup;
+        if (startMarker)
+          try {
+            map.removeLayer(startMarker);
+          } catch (_) {}
+        startMarker = L.marker([sp.lat, sp.lng], {
+          icon: L.icon({
+            iconUrl: "https://maps.google.com/mapfiles/ms/icons/green-dot.png",
+            iconSize: [24, 24],
+            iconAnchor: [12, 24],
+          }),
+        })
+          .addTo(map)
+          .bindPopup("Gần điểm lên: " + sp.name);
+        auxiliaryMarkers.push(startMarker);
+        bounds.push([sp.lat, sp.lng]);
+      }
+      // if plan has a startPickup and there is a bus boarding step, draw walking connector
+      try {
+        const firstBus = (steps || []).find((s) => s.type === "bus");
+        if (plan.startPickup && firstBus && firstBus.fromCoord) {
+          const fromLat = plan.startPickup.lat;
+          const fromLng = plan.startPickup.lng;
+          const toLat = firstBus.fromCoord[0] || firstBus.fromLat || null;
+          const toLng = firstBus.fromCoord[1] || firstBus.fromLng || null;
+          if (toLat && toLng) {
+            // attempt ORS walking route; fallback to straight line
+            (async () => {
+              const ORS_KEY =
+                "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImViNTU5Yzk4NzEzODRmMGRhYzBmOGRmYmI0OWYzNzEyIiwiaCI6Im11cm11cjY0In0=";
+              try {
+                const res = await fetch(
+                  "https://api.openrouteservice.org/v2/directions/foot-walking/geojson",
+                  {
+                    method: "POST",
+                    headers: {
+                      Authorization: ORS_KEY,
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                      coordinates: [
+                        [fromLng, fromLat],
+                        [toLng, toLat],
+                      ],
+                    }),
+                  }
+                );
+                const data = await res.json();
+                let walkCoords = null;
+                if (
+                  data &&
+                  data.features &&
+                  data.features[0] &&
+                  data.features[0].geometry
+                )
+                  walkCoords = data.features[0].geometry.coordinates.map(
+                    (c) => [c[1], c[0]]
+                  );
+                if (!walkCoords || walkCoords.length === 0)
+                  throw new Error("no-route");
+                // draw solid walk lines (white base + thin dark overlay)
+                const baseWalk = L.polyline(walkCoords, {
+                  color: "#ffffff",
+                  weight: 8,
+                  opacity: 0.95,
+                }).addTo(map);
+                const thinWalk = L.polyline(walkCoords, {
+                  color: "#616161",
+                  weight: 3,
+                  opacity: 0.95,
+                }).addTo(map);
+                planWalkLine = [baseWalk, thinWalk];
+              } catch (e) {
+                // fallback straight line
+                try {
+                  const baseWalk = L.polyline(
+                    [
+                      [fromLat, fromLng],
+                      [toLat, toLng],
+                    ],
+                    { color: "#ffffff", weight: 8, opacity: 0.95 }
+                  ).addTo(map);
+                  const thinWalk = L.polyline(
+                    [
+                      [fromLat, fromLng],
+                      [toLat, toLng],
+                    ],
+                    { color: "#616161", weight: 3, opacity: 0.95 }
+                  ).addTo(map);
+                  planWalkLine = [baseWalk, thinWalk];
+                } catch (_) {}
+              }
+            })();
+          }
+        }
+      } catch (e) {
+        console.debug("plan walking connector error", e);
+      }
+      if (plan.endDropoff) {
+        const ep = plan.endDropoff;
+        if (endMarker)
+          try {
+            map.removeLayer(endMarker);
+          } catch (_) {}
+        endMarker = L.marker([ep.lat, ep.lng], {
+          icon: L.icon({
+            iconUrl: "https://maps.google.com/mapfiles/ms/icons/red-dot.png",
+            iconSize: [24, 24],
+            iconAnchor: [12, 24],
+          }),
+        })
+          .addTo(map)
+          .bindPopup("Gần điểm xuống: " + ep.name);
+        auxiliaryMarkers.push(endMarker);
+        bounds.push([ep.lat, ep.lng]);
+      }
+
+      if (bounds.length > 0) {
+        try {
+          map.fitBounds(bounds);
+        } catch (_) {}
+      }
+
+      // show a small summary in sidebar only when there are no alternatives/options
+      const hasAlt = plan && (plan.alternatives || plan.options);
+      const detail = document.getElementById("route-detail");
+      const listContainer = document.getElementById("route-list");
+      if (hasAlt) {
+        // ensure card list is visible and text detail hidden
+        if (listContainer) listContainer.style.display = "block";
+        if (detail) detail.style.display = "none";
+      } else {
+        // remove the textual 'Kết quả tìm đường' summary and rely on map rendering
+        if (detail) {
+          detail.innerHTML = "";
+          detail.style.display = "none";
+        }
+      }
+    }
+
+    // Render list of suggested plans/routes in the sidebar (like image 1)
+    function renderPlanList(plan) {
+      // Prefer to render inside the active 'route' tab if visible, otherwise fall back to #route-list
+      let listContainer = null;
+      const routeTab = document.getElementById("route-tab");
+      if (routeTab && window.getComputedStyle(routeTab).display !== "none") {
+        listContainer = routeTab.querySelector(".plan-results");
+        if (!listContainer) {
+          listContainer = document.createElement("div");
+          listContainer.className = "plan-results";
+          // insert after the route-search-card
+          const card = routeTab.querySelector(".route-search-card");
+          if (card)
+            card.parentNode.insertBefore(listContainer, card.nextSibling);
+          else routeTab.appendChild(listContainer);
+        }
+      } else {
+        listContainer = document.getElementById("route-list");
+      }
+      if (!listContainer) return;
+      listContainer.innerHTML = "";
+      const header = document.createElement("div");
+      header.className = "plan-list-header";
+      header.innerText = "Các cách di chuyển phù hợp";
+      listContainer.appendChild(header);
+
+      // backend may return alternatives or options; fall back to plan itself
+      const routes = plan.alternatives || plan.options || [plan];
+      // show route-list and hide detail panel (detail text sometimes left visible)
+      const detailPanel = document.getElementById("route-detail");
+      if (detailPanel) detailPanel.style.display = "none";
+      listContainer.style.display = "block";
+      routes.forEach((p, idx) => {
+        const card = document.createElement("div");
+        card.className = "route-option";
+
+        // compute simple stats
+        let walkMeters = p.totalWalkMeters || 0;
+        const busSegments = (p.steps || []).filter((s) => s.type === "bus");
+        const transfers = Math.max(0, busSegments.length - 1);
+        const firstBus = busSegments[0] && busSegments[0].route;
+        // format price nicely (show VND if numeric)
+        let price = "";
+        try {
+          if (p.fare !== undefined && p.fare !== null && p.fare !== "") {
+            const raw = String(p.fare).trim();
+            const num = Number(raw.replace(/[^0-9\.]/g, ""));
+            if (!isNaN(num) && num > 0) {
+              // assume raw is in smallest units when large, otherwise keep as number
+              price = num.toLocaleString("vi-VN") + " ₫";
+            } else {
+              // fallback: show original string
+              price = raw;
+            }
+          }
+        } catch (_) {
+          price = p.fare || "";
+        }
+
+        // small helper to format km for bus distance (approximate)
+        const busKm =
+          Math.round(((p.busKm || 0) + Number.EPSILON) * 10) / 10 ||
+          (p.busKm === 0
+            ? 0
+            : Math.round(((p.estimatedBusKm || 0) + Number.EPSILON) * 10) / 10);
+
+        card.innerHTML = `
+          <div class="route-option-left">
+            <div class="route-badges">
+              ${busSegments
+                .slice(0, 3)
+                .map((s) => `<span class="badge">${s.route || ""}</span>`)
+                .join("")}
+            </div>
+            <div class="route-option-meta">
+              <div class="route-stats">🚶 ${walkMeters} m &nbsp; • &nbsp; 🚍 ${busKm} km</div>
+              <div class="route-start">Xuất phát tại trạm: ${
+                plan.startPickup ? plan.startPickup.name : ""
+              }</div>
+            </div>
+          </div>
+          <div class="route-option-right">
+            <div class="fare">${price}</div>
+            <div class="duration">${
+              p.duration ? p.duration + " phút" : ""
+            }</div>
+            <button class="find-btn" onclick="event.stopPropagation(); showPlanOverlayForPlan(${idx})">Chi tiết</button>
+          </div>
+        `;
+
+        card.onclick = () => renderPlan(p);
+        listContainer.appendChild(card);
+
+        // if plan did not include a fare, try to fetch it from the bus routes DB
+        (function () {
+          const fareEl = card.querySelector(".fare");
+          try {
+            if (
+              (price === null || price === "" || price === undefined) &&
+              firstBus
+            ) {
+              fetch("/api/bus/routes")
+                .then((r) => r.json())
+                .then((routesList) => {
+                  if (!routesList || !Array.isArray(routesList)) return;
+                  const found = routesList.find(
+                    (rr) =>
+                      String(rr.routeNumber) === String(firstBus) ||
+                      String(rr.id) === String(firstBus)
+                  );
+                  if (found && found.fare && fareEl) {
+                    const raw = String(found.fare).trim();
+                    const num = Number(raw.replace(/[^0-9\.]/g, ""));
+                    fareEl.textContent =
+                      !isNaN(num) && num > 0
+                        ? num.toLocaleString("vi-VN") + " ₫"
+                        : raw;
+                  }
+                })
+                .catch(() => {});
+            } else if (fareEl) {
+              // ensure formatted price is shown
+              fareEl.textContent = price || "";
+            }
+          } catch (_) {}
+        })();
+      });
+
+      // inject styles for plan list if not present
+      if (!document.getElementById("plan-ui-style")) {
+        const s = document.createElement("style");
+        s.id = "plan-ui-style";
+        s.innerHTML = `
+          .plan-list-header{font-weight:800;margin:6px 0 12px 0;font-size:18px;color:#222}
+          /* green-accent card with left stripe */
+          .route-option{display:flex;justify-content:space-between;align-items:center;padding:12px;border-radius:12px;background:#fff;margin-bottom:12px;border:1px solid #dff7ec;box-shadow:0 8px 20px rgba(16,124,74,0.06);border-left:6px solid #00C853}
+          .route-option-left{display:flex;align-items:center;gap:14px}
+          .route-badges .badge{display:flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:10px;background:#fff8e1;border:1px solid #f0e0b8;font-weight:800;color:#3e3e3e;font-size:18px}
+          .route-option-meta{font-size:14px;color:#444}
+          .route-stats{display:flex;gap:10px;color:#757575;align-items:center;margin-bottom:6px;font-size:13px}
+          .route-start{color:#555;font-size:14px}
+          .route-option-right{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+          .fare{background:#e8fef3;padding:6px 10px;border-radius:12px;border:1px solid #00C853;color:#007a3d;font-weight:800;font-size:13px}
+          .duration{color:#007a3d;font-weight:800}
+          .route-option .find-btn{background:#00C853;color:#fff;padding:8px 14px;border-radius:10px;border:none;cursor:pointer;font-weight:800}
+          .route-option .find-btn:hover{filter:brightness(0.95)}
+          /* small toggle placeholder on the right of the card */
+          .route-option .small-toggle{width:44px;height:26px;border-radius:16px;background:#f2f2f2;border:1px solid #eaeaea}
+        `;
+        document.head.appendChild(s);
+      }
+      // ensure plan-results container style
+      if (!document.getElementById("plan-results-style")) {
+        const ss = document.createElement("style");
+        ss.id = "plan-results-style";
+        ss.innerHTML = `.plan-results{margin-top:12px;max-height:360px;overflow:auto;padding-right:6px}`;
+        document.head.appendChild(ss);
+      }
+
+      // attempt to find other routes that also pass through the plan's start/end or stops
+      (async () => {
+        try {
+          // collect candidate stop names from the plan (start/end and bus segment stops)
+          const stopNames = new Set();
+          try {
+            if (plan.startPickup && plan.startPickup.name)
+              stopNames.add(String(plan.startPickup.name).toLowerCase());
+            if (plan.endDropoff && plan.endDropoff.name)
+              stopNames.add(String(plan.endDropoff.name).toLowerCase());
+            // include any names from steps (from/to arrays)
+            (plan.steps || []).forEach((s) => {
+              if (Array.isArray(s.from))
+                s.from.forEach(
+                  (x) => x && stopNames.add(String(x).toLowerCase())
+                );
+              if (Array.isArray(s.to))
+                s.to.forEach(
+                  (x) => x && stopNames.add(String(x).toLowerCase())
+                );
+            });
+          } catch (_) {}
+
+          if (stopNames.size === 0) return; // nothing to match
+
+          const shownRoutes = new Set();
+          // gather already shown route numbers/ids to avoid duplicates
+          try {
+            const existingBadges = listContainer.querySelectorAll(
+              ".route-badges .badge"
+            );
+            existingBadges.forEach((b) =>
+              shownRoutes.add(b.textContent && b.textContent.trim())
+            );
+          } catch (_) {}
+
+          const allRoutes = await fetch("/api/bus/routes").then((r) =>
+            r.json()
+          );
+          if (!Array.isArray(allRoutes)) return;
+
+          const maxChecks = 40; // limit how many routes we will fetch stops for
+          let checked = 0;
+          const matches = [];
+          for (const r of allRoutes) {
+            if (checked >= maxChecks) break;
+            try {
+              // skip if route already shown (by route number)
+              if (
+                r &&
+                String(r.routeNumber) &&
+                shownRoutes.has(String(r.routeNumber))
+              )
+                continue;
+              const stops = await fetch(`/api/bus/route/${r.id}/stops`).then(
+                (s) => s.json()
+              );
+              checked++;
+              if (!Array.isArray(stops)) continue;
+              // count matched stops (by name) and require at least 2 matches
+              let matchedCount = 0;
+              const matchedStops = [];
+              for (const s of stops) {
+                if (!s || !s.name) continue;
+                const nm = String(s.name).toLowerCase();
+                for (const target of stopNames) {
+                  if (nm.indexOf(target) !== -1 || target.indexOf(nm) !== -1) {
+                    matchedCount++;
+                    matchedStops.push(s);
+                    break;
+                  }
+                }
+              }
+              if (matchedCount >= 2) {
+                // ensure the nearest matched stop to plan start is within walking threshold
+                let includeMatch = true;
+                try {
+                  const startPos =
+                    (plan && plan.startPickup) ||
+                    (plan && plan.startLat && plan.startLng
+                      ? { lat: plan.startLat, lng: plan.startLng }
+                      : null);
+                  if (startPos && startPos.lat && startPos.lng) {
+                    let minD = Infinity;
+                    for (const s of matchedStops) {
+                      if (s && s.lat && s.lng) {
+                        const d = haversineMeters(
+                          startPos.lat,
+                          startPos.lng,
+                          s.lat,
+                          s.lng
+                        );
+                        if (d < minD) minD = d;
+                      }
+                    }
+                    const WALK_THRESHOLD = 1000; // meters
+                    if (minD === Infinity || minD > WALK_THRESHOLD)
+                      includeMatch = false;
+                  }
+                } catch (_) {}
+                if (includeMatch) matches.push({ route: r, stops });
+              }
+            } catch (_) {}
+            // stop early if we already found a few
+            if (matches.length >= 6) break;
+          }
+
+          // append matches into the plan-results list (render similarly to existing cards)
+          matches.forEach((m) => {
+            try {
+              const r = m.route;
+              const stops = Array.isArray(m.stops) ? m.stops : [];
+              const card = document.createElement("div");
+              card.className = "route-option";
+              const firstBus = r.routeNumber || r.id;
+              const price = r && r.fare ? String(r.fare) : "";
+              // use original plan's walk distance when available (or sum walk steps)
+              let walkMeters = 0;
+              let routeStartName = "";
+              try {
+                if (plan && plan.totalWalkMeters)
+                  walkMeters = Math.round(plan.totalWalkMeters);
+                else if (plan && Array.isArray(plan.steps)) {
+                  walkMeters = plan.steps
+                    .filter((s) => s.type === "walk")
+                    .reduce((acc, s) => acc + (s.distance || 0), 0);
+                  walkMeters = Math.round(walkMeters || 0);
+                }
+                // routeStartName: prefer plan.startPickup name, else first matched stop name
+                if (plan && plan.startPickup && plan.startPickup.name)
+                  routeStartName = plan.startPickup.name;
+                else if (stops && stops.length && stops[0].name)
+                  routeStartName = stops[0].name;
+              } catch (_) {}
+              const busKm = "0";
+              card.innerHTML = `
+                <div class="route-option-left">
+                  <div class="route-badges">
+                    <span class="badge">${escapeHtml(firstBus)}</span>
+                  </div>
+                  <div class="route-option-meta">
+                    <div class="route-stats">🚶 ${walkMeters} m &nbsp; • &nbsp; 🚍 ${busKm} km</div>
+                    <div class="route-start">Xuất phát tại trạm: ${escapeHtml(
+                      routeStartName
+                    )}</div>
+                  </div>
+                </div>
+                <div class="route-option-right">
+                  <div class="fare">${price}</div>
+                  <div class="duration"></div>
+                  <button class="find-btn" onclick="event.stopPropagation(); showRouteFromPlan('${
+                    r.id
+                  }')">Chi tiết</button>
+                </div>
+              `;
+              card.onclick = () => {};
+              listContainer.appendChild(card);
+            } catch (_) {}
+          });
+        } catch (e) {
+          console.warn("find extra routes error", e);
+        }
+      })();
+    }
+
+    // Show detailed panel for a selected plan (like image 2)
+    async function showPlanDetail(idx) {
+      // assume last rendered plan is stored
+      if (!window._lastPlan) return;
+      const p =
+        (window._lastPlan.alternatives && window._lastPlan.alternatives[idx]) ||
+        window._lastPlan;
+      const detail = document.getElementById("route-detail");
+      if (!detail) return;
+
+      // header + tabs structure
+      detail.innerHTML = `
+        <div class="plan-detail-panel">
+          <div class="plan-header">
+            <div class="plan-badge">${
+              (p.steps || [])
+                .filter((s) => s.type === "bus")
+                .map((s) => s.route || "")
+                .filter(Boolean)[0] || ""
+            }</div>
+            <div class="plan-title">Chi tiết cách đi</div>
+            <div class="plan-right"><div class="duration">${
+              p.duration ? p.duration + " phút" : ""
+            }</div><button onclick="hideRouteDetail()" class="btn-close">Đóng</button></div>
+          </div>
+          <div class="plan-tabs">
+            <button class="plan-tab active" data-tab="detail" onclick="switchPlanTab('detail')">CHI TIẾT CÁCH ĐI</button>
+            <button class="plan-tab" data-tab="stops" onclick="switchPlanTab('stops')">CÁC TRẠM ĐI QUA</button>
+          </div>
+          <div class="plan-content">
+            <div id="plan-detail-steps" class="plan-step-content"></div>
+            <div id="plan-detail-stations" class="plan-stations-content" style="display:none"></div>
+          </div>
+        </div>
+      `;
+      detail.style.display = "block";
+
+      // render steps list
+      const stepsEl = document.getElementById("plan-detail-steps");
+      const htmlSteps = [];
+      (p.steps || []).forEach((s) => {
+        if (s.type === "walk") {
+          htmlSteps.push(
+            `<div class="step-item">🚶‍♂️ <div class="step-desc">${
+              s.desc || "Đi bộ"
+            }</div><div class="step-sub">${(s.from || []).join(",")} → ${(
+              s.to || []
+            ).join(",")}</div></div>`
+          );
+        } else if (s.type === "bus") {
+          htmlSteps.push(
+            `<div class="step-item">🚌 <div class="step-desc">Tuyến ${
+              s.route || ""
+            } • ${s.desc || ""}</div><div class="step-sub">${(
+              s.from || []
+            ).join(",")} → ${(s.to || []).join(",")}</div></div>`
+          );
+        } else if (s.type === "note") {
+          htmlSteps.push(`<div class="step-note">${s.desc}</div>`);
+        }
+      });
+      stepsEl.innerHTML = htmlSteps.join("");
+
+      // try to render full stop list for first bus segment
+      const stationsEl = document.getElementById("plan-detail-stations");
+      stationsEl.innerHTML =
+        '<div style="padding:12px;color:#666">Đang tải danh sách trạm...</div>';
+      const firstBus = (p.steps || []).find((s) => s.type === "bus");
+      if (firstBus && firstBus.route) {
+        try {
+          const routes = await fetch("/api/bus/routes").then((r) => r.json());
+          const routeObj = routes.find(
+            (r) =>
+              String(r.routeNumber) === String(firstBus.route) ||
+              String(r.id) === String(firstBus.route)
+          );
+          if (routeObj) {
+            const stops = await fetch(
+              `/api/bus/route/${routeObj.id}/stops`
+            ).then((r) => r.json());
+            if (stops && stops.length > 0) {
+              // build timeline list
+              const list = [];
+              list.push('<div class="stations-list">');
+              stops.forEach((s, i) => {
+                list.push(
+                  `<div class="station-row"><div class="station-left"><div class="station-dot"></div>${
+                    i === 0 ? '<div class="station-pin"></div>' : ""
+                  }</div><div class="station-info"><div class="station-name">${
+                    s.name
+                  }</div></div><div class="station-dist">${
+                    s.stopOrder ? s.stopOrder + "" : ""
+                  }</div></div>`
+                );
+              });
+              list.push("</div>");
+              stationsEl.innerHTML = list.join("");
+            } else {
+              stationsEl.innerHTML =
+                '<div style="padding:12px;color:#666">Không có dữ liệu trạm cho tuyến này.</div>';
+            }
+          } else {
+            stationsEl.innerHTML =
+              '<div style="padding:12px;color:#666">Không tìm thấy thông tin tuyến trên server.</div>';
+          }
+        } catch (e) {
+          stationsEl.innerHTML =
+            '<div style="padding:12px;color:#666">Lỗi khi tải trạm: ' +
+            (e.message || e) +
+            "</div>";
+        }
+      } else {
+        stationsEl.innerHTML =
+          '<div style="padding:12px;color:#666">Không có đoạn xe buýt để liệt kê trạm.</div>';
+      }
+
+      // render map overlay of plan
+      renderPlan(p);
+
+      // inject CSS for panel if not present
+      if (!document.getElementById("plan-detail-style")) {
+        const css = document.createElement("style");
+        css.id = "plan-detail-style";
+        css.innerHTML = `
+          .plan-detail-panel{background:#fff;border-radius:12px;padding:10px;box-shadow:0 -6px 24px rgba(0,0,0,0.12);}
+          .plan-header{display:flex;align-items:center;gap:12px}
+          .plan-badge{background:#ffd; padding:8px 12px;border-radius:8px;font-weight:800}
+          .plan-title{font-weight:800;flex:1}
+          .plan-tabs{display:flex;gap:6px;margin-top:8px}
+          .plan-tab{flex:1;padding:10px;border-radius:8px;border:none;background:#f2f2f2;cursor:pointer;font-weight:700}
+          .plan-tab.active{background:#00a86b;color:#fff}
+          .plan-content{margin-top:10px}
+          .plan-step-content .step-item{padding:10px 0;border-bottom:1px solid #f2f2f2}
+          .plan-step-content .step-desc{font-weight:700}
+          .stations-list{padding:6px}
+          .station-row{display:flex;align-items:center;padding:10px 6px;border-bottom:1px solid #f6f6f6}
+          .station-left{width:36px;display:flex;flex-direction:column;align-items:center}
+          .station-dot{width:10px;height:10px;background:#43a047;border-radius:50%;margin-bottom:6px}
+          .station-info{flex:1}
+          .station-name{font-weight:600}
+          .station-dist{width:48px;text-align:right;color:#999}
+        `;
+        document.head.appendChild(css);
+      }
+    }
+
+    function switchPlanTab(tab) {
+      document
+        .querySelectorAll(".plan-tab")
+        .forEach((b) => b.classList.remove("active"));
+      const tb = document.querySelector(`.plan-tab[data-tab="${tab}"]`);
+      if (tb) tb.classList.add("active");
+      document.getElementById("plan-detail-steps").style.display =
+        tab === "detail" ? "block" : "none";
+      document.getElementById("plan-detail-stations").style.display =
+        tab === "stops" ? "block" : "none";
+    }
+
+    // ----- New: Right-side overlay to show full route stops and draw white-direction polyline -----
+    let routeOverlayEl = null;
+    let overlayStopMarkers = [];
+    let overlayRouteLine = null;
+    let overlayDirLine = null; // thin colored line on top of white base
+    let overlayWalkLine = null;
+    let routeLineSaved = null; // when overlay opens we remove blue routeLine and save it here
+    let routeLineSavedLayers = [];
+    let overlayZoomHandlerAdded = false;
+    // simulation state for overlay: marker, timer, path, distances
+    let overlaySim = null;
+
+    function openRouteOverlay(routeId, direction, endCoord, startCoord) {
+      // create or show overlay container on the right side of the map
+      if (!routeOverlayEl) {
+        routeOverlayEl = document.createElement("div");
+        routeOverlayEl.id = "route-overlay";
+        // tabbed layout: detail (steps) + stations (stop list)
+        routeOverlayEl.innerHTML = `
+          <div class="route-overlay-header">
+            <div class="route-overlay-title">Chi tiết tuyến</div>
+            <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+              <button id="route-simulate-toggle" class="btn-sim">Mô phỏng 35 km/h</button>
+              <button id="route-overlay-close" class="btn-close-overlay">×</button>
+            </div>
+          </div>
+          <div class="route-overlay-tabs">
+            <button class="route-tab active" data-tab="detail">CHI TIẾT CÁCH ĐI</button>
+            <button class="route-tab" data-tab="stops">CÁC TRẠM ĐI QUA</button>
+          </div>
+          <div id="route-overlay-body" class="route-overlay-body">
+            <div id="route-detail-steps" class="route-overlay-panel">Đang tải chi tiết...</div>
+            <div id="route-detail-stations" class="route-overlay-panel" style="display:none">Đang tải danh sách trạm...</div>
+          </div>
+        `;
+        document.body.appendChild(routeOverlayEl);
+        document.getElementById("route-overlay-close").onclick = () =>
+          closeRouteOverlay();
+
+        // ensure overlay panel is scrollable
+        if (!document.getElementById("route-overlay-style")) {
+          const css = document.createElement("style");
+          css.id = "route-overlay-style";
+          css.innerHTML = `
+            .route-overlay-body{position:relative;padding:8px}
+            /* shortened scroll area: reduces visible stop list height */
+            .route-overlay-panel{overflow:auto;max-height:calc(100vh - 320px);padding-right:12px}
+            .btn-sim{background:#00C853;color:#fff;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-weight:700}
+            .btn-sim:hover{opacity:0.95}
+          `;
+          document.head.appendChild(css);
+        }
+
+        // wire tab switching
+        const tabs = routeOverlayEl.querySelectorAll(".route-tab");
+        tabs.forEach((t) =>
+          t.addEventListener("click", function () {
+            tabs.forEach((x) => x.classList.remove("active"));
+            this.classList.add("active");
+            const tab = this.dataset.tab;
+            document.getElementById("route-detail-steps").style.display =
+              tab === "detail" ? "block" : "none";
+            document.getElementById("route-detail-stations").style.display =
+              tab === "stops" ? "block" : "none";
+            // Auto-scroll disabled: allow users to manually scroll the "CÁC TRẠM ĐI QUA" tab
+            // (previous behavior auto-scrolled to the last stop; removed per UX request)
+          })
+        );
+        // wire simulate button
+        try {
+          const simBtn = routeOverlayEl.querySelector("#route-simulate-toggle");
+          if (simBtn) {
+            simBtn.addEventListener("click", function () {
+              try {
+                if (overlaySim && overlaySim.timer) {
+                  stopOverlaySimulation();
+                } else {
+                  startOverlaySimulation();
+                }
+              } catch (e) {}
+            });
+          }
+        } catch (_) {}
+      }
+      const body = document.getElementById("route-overlay-body");
+      // don't overwrite the panel structure; set per-panel loading text so
+      // the panels (with IDs) remain present and can be populated after fetch
+      const pSteps = document.getElementById("route-detail-steps");
+      const pStations = document.getElementById("route-detail-stations");
+      if (pSteps) pSteps.innerHTML = "Đang tải chi tiết...";
+      if (pStations) pStations.innerHTML = "Đang tải danh sách trạm...";
+
+      // fetch stops for routeId and draw on map
+      const apiUrl =
+        direction === "return"
+          ? `/api/bus/route/${routeId}/stops-return`
+          : `/api/bus/route/${routeId}/stops`;
+      fetch(apiUrl)
+        .then((r) => r.json())
+        .then((stops) => {
+          if (!stops || stops.length === 0) {
+            body.innerHTML =
+              '<div style="padding:12px;color:#666">Không có dữ liệu trạm.</div>';
+            return;
+          }
+          // if start/end coordinates are provided, trim stops to the range between
+          // the nearest stop to the start and the nearest stop to the end so we only
+          // show the relevant segment instead of all route stops.
+          try {
+            if (Array.isArray(stops) && stops.length > 0) {
+              let startIdx = -1,
+                endIdx = -1;
+              if (startCoord && startCoord.lat && startCoord.lng) {
+                let minDs = Infinity;
+                stops.forEach((s, i) => {
+                  if (s && s.lat && s.lng) {
+                    const d = haversineMeters(
+                      s.lat,
+                      s.lng,
+                      startCoord.lat,
+                      startCoord.lng
+                    );
+                    if (d < minDs) {
+                      minDs = d;
+                      startIdx = i;
+                    }
+                  }
+                });
+              }
+              if (endCoord && endCoord.lat && endCoord.lng) {
+                let minDe = Infinity;
+                stops.forEach((s, i) => {
+                  if (s && s.lat && s.lng) {
+                    const d = haversineMeters(
+                      s.lat,
+                      s.lng,
+                      endCoord.lat,
+                      endCoord.lng
+                    );
+                    if (d < minDe) {
+                      minDe = d;
+                      endIdx = i;
+                    }
+                  }
+                });
+              }
+
+              // If both indices found, slice between them (inclusive). If only one found,
+              // fall back to previous behavior: slice from start (0) to nearest end, or show all.
+              if (startIdx >= 0 && endIdx >= 0) {
+                // include both endpoints and preserve travel order from startCoord -> endCoord
+                // when the nearest indices are reversed in the array, reverse the sliced segment
+                const a = Math.min(startIdx, endIdx);
+                const b = Math.max(startIdx, endIdx);
+                let segment = stops.slice(a, b + 1);
+                // if startIdx comes after endIdx in the array, reverse to keep start->end ordering
+                if (startIdx > endIdx) segment = segment.reverse();
+                stops = segment;
+              } else if (endIdx >= 0) {
+                // nearest end: keep stops from route start up to nearest end (inclusive)
+                stops = stops.slice(0, endIdx + 1);
+              } else if (startIdx >= 0) {
+                // nearest start only: keep from nearest start to route end (inclusive)
+                stops = stops.slice(startIdx);
+              }
+            }
+          } catch (e) {
+            console.debug("trim stops error", e);
+          }
+
+          // build list from (possibly trimmed) stops
+          const rows = stops
+            .map(
+              (s, i) =>
+                `<div class="route-stop-row" data-idx="${i}" onclick="focusOverlayStop(${i})"><div class="route-stop-index">${
+                  i + 1
+                }</div><div style="flex:1"><div class="route-stop-name">${escapeHtml(
+                  s.name
+                )}</div>${
+                  s.subtitle
+                    ? `<div class="route-stop-sub">${escapeHtml(
+                        s.subtitle
+                      )}</div>`
+                    : ""
+                }</div></div>`
+            )
+            .join("");
+
+          // populate stations panel (right/bottom tab)
+          const stationsPanel = document.getElementById(
+            "route-detail-stations"
+          );
+          // keep a global reference to the stops currently shown in overlay so other handlers
+          // (like focusOverlayStop) can access exact coords even if markers were not created
+          try {
+            window._currentOverlayStops = Array.isArray(stops) ? stops : [];
+          } catch (_) {}
+          if (stationsPanel) {
+            stationsPanel.innerHTML = rows;
+            // Auto-scroll removed so users can manually scroll the stop list.
+          }
+
+          // precompute latlngs from stops so steps fallback can reference them
+          let latlngs = [];
+          try {
+            latlngs = (stops || [])
+              .filter((st) => st && st.lat && st.lng)
+              .map((st) => [st.lat, st.lng]);
+          } catch (_) {
+            latlngs = [];
+          }
+
+          // build Chi tiết cách đi panel: prefer planner data when available
+          const stepsPanel = document.getElementById("route-detail-steps");
+          try {
+            let stepsHtml = "";
+            const overlayPlan = window._overlayPlan || null;
+            if (
+              overlayPlan &&
+              Array.isArray(overlayPlan.steps) &&
+              overlayPlan.steps.length
+            ) {
+              // render plan's steps (walk, bus, note)
+              overlayPlan.steps.forEach((s) => {
+                if (s.type === "walk") {
+                  const dist = s.distance || 0;
+                  const mins = s.duration
+                    ? Math.max(1, Math.round(s.duration / 60))
+                    : Math.max(1, Math.round(dist / 80));
+                  stepsHtml += `<div class="step-item"><div class="step-icon">🚶</div><div class="step-content"><div class="step-title">Đi bộ ${
+                    dist ? "~" + Math.round(dist) + " m" : ""
+                  }</div><div class="step-sub">${
+                    s.desc ? escapeHtml(s.desc) : ""
+                  } ${mins} phút</div></div></div>`;
+                } else if (s.type === "bus") {
+                  const title = `Đi tuyến ${escapeHtml(
+                    String(s.route || s.routeNumber || "")
+                  )}`;
+                  const durationMin = s.duration
+                    ? Math.max(1, Math.round(s.duration / 60))
+                    : "";
+                  const segStops =
+                    (s.stops && s.stops.length) || (s.to && s.from ? "n" : "");
+                  let sub = `Qua ${segStops} trạm`;
+                  if (durationMin) sub += ` · ${durationMin} phút`;
+                  if (s.desc) sub = `${escapeHtml(s.desc)} · ${sub}`;
+                  stepsHtml += `<div class="step-item"><div class="step-icon">🚌</div><div class="step-content"><div class="step-title">${title}</div><div class="step-sub">${sub}</div></div></div>`;
+                } else if (s.type === "note") {
+                  stepsHtml += `<div class="step-item"><div class="step-icon">💡</div><div class="step-content"><div class="step-title">${escapeHtml(
+                    s.desc || ""
+                  )}</div></div></div>`;
+                }
+              });
+            } else {
+              // fallback heuristic when no plan steps available
+              let nearestStart = -1,
+                minDs = Infinity;
+              if (startCoord && startCoord.lat && startCoord.lng) {
+                latlngs.forEach((ll, i) => {
+                  const d = haversineMeters(
+                    ll[0],
+                    ll[1],
+                    startCoord.lat,
+                    startCoord.lng
+                  );
+                  if (d < minDs) {
+                    minDs = d;
+                    nearestStart = i;
+                  }
+                });
+              }
+              let nearestEnd = -1,
+                minDe = Infinity;
+              if (endCoord && endCoord.lat && endCoord.lng) {
+                latlngs.forEach((ll, i) => {
+                  const d = haversineMeters(
+                    ll[0],
+                    ll[1],
+                    endCoord.lat,
+                    endCoord.lng
+                  );
+                  if (d < minDe) {
+                    minDe = d;
+                    nearestEnd = i;
+                  }
+                });
+              }
+              let totalMeters = 0;
+              for (let i = 1; i < latlngs.length; i++) {
+                totalMeters += haversineMeters(
+                  latlngs[i - 1][0],
+                  latlngs[i - 1][1],
+                  latlngs[i][0],
+                  latlngs[i][1]
+                );
+              }
+              if (nearestStart >= 0 && minDs !== Infinity) {
+                const walkM = Math.round(minDs);
+                const walkMin = Math.max(1, Math.round(walkM / 80));
+                const sName = escapeHtml(stops[nearestStart].name || "");
+                stepsHtml += `<div class="step-item"><div class="step-icon">🚶</div><div class="step-content"><div class="step-title">Đi đến trạm <strong>${sName}</strong></div><div class="step-sub">Xuất phát từ vị trí của bạn · ${walkMin} phút · ${walkM} m</div></div></div>`;
+              }
+              const routeLabel = escapeHtml(String(routeId || "Tuyến xe"));
+              stepsHtml += `<div class="step-item"><div class="step-icon">🚌</div><div class="step-content"><div class="step-title">Đi tuyến ${routeLabel}</div><div class="step-sub">Qua ${
+                stops.length
+              } trạm · ${(totalMeters / 1000).toFixed(
+                1
+              )} km</div></div><div style="min-width:56px;text-align:right;color:#2e7d32;font-weight:700">${Math.max(
+                1,
+                Math.round((totalMeters / 1000) * 2)
+              )} phút</div></div>`;
+              if (nearestEnd >= 0 && minDe !== Infinity) {
+                const walkM = Math.round(minDe);
+                const walkMin = Math.max(1, Math.round(walkM / 80));
+                const lastStopName = escapeHtml(stops[nearestEnd].name || "");
+                stepsHtml += `<div class="step-item"><div class="step-icon">🚶</div><div class="step-content"><div class="step-title">Xuống tại trạm <strong>${lastStopName}</strong> và đi tới điểm đến</div><div class="step-sub">${walkMin} phút · ${walkM} m</div></div></div>`;
+              }
+            }
+            if (stepsPanel)
+              stepsPanel.innerHTML =
+                stepsHtml ||
+                '<div style="padding:12px;color:#666">Không có chi tiết hành trình</div>';
+          } catch (e) {
+            if (stepsPanel)
+              stepsPanel.innerHTML =
+                '<div style="padding:12px;color:#666">Không có chi tiết</div>';
+          }
+
+          // draw white-centered polyline showing direction
+          clearOverlayLayers();
+          if (latlngs.length > 1) {
+            // when opening overlay hide existing blue routeLine(s) and save them to restore later
+            try {
+              // first clear any plan layers (polylines/markers) from previous plan rendering but keep start/end markers
+              clearPlanLayers(true);
+              routeLineSavedLayers = [];
+              map.eachLayer(function (ly) {
+                try {
+                  const color =
+                    (ly.options && ly.options.color) ||
+                    (ly.feature &&
+                    ly.feature.properties &&
+                    ly.feature.properties.style &&
+                    ly.feature.properties.style.color
+                      ? ly.feature.properties.style.color
+                      : null);
+                  if (
+                    color &&
+                    String(color).toLowerCase().indexOf("2196f3") !== -1
+                  ) {
+                    routeLineSavedLayers.push(ly);
+                    map.removeLayer(ly);
+                    console.debug(
+                      "openRouteOverlay: saved layer color",
+                      color,
+                      ly
+                    );
+                  } else if (ly instanceof L.GeoJSON && ly.getLayers) {
+                    // also consider geojson feature groups that may contain blue routes
+                    const containsBlue = ly
+                      .getLayers()
+                      .some(
+                        (sub) =>
+                          sub.options &&
+                          sub.options.color &&
+                          String(sub.options.color)
+                            .toLowerCase()
+                            .indexOf("2196f3") !== -1
+                      );
+                    if (containsBlue) {
+                      routeLineSavedLayers.push(ly);
+                      map.removeLayer(ly);
+                      console.debug(
+                        "openRouteOverlay: saved geojson group",
+                        ly
+                      );
+                    }
+                  }
+                } catch (e) {}
+              });
+            } catch (_) {}
+
+            // Try to obtain a realistic route geometry (follow roads) using ORS
+            (async () => {
+              const ORS_KEY =
+                "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImViNTU5Yzk4NzEzODRmMGRhYzBmOGRmYmI0OWYzNzEyIiwiaCI6Im11cm11cjY0In0=";
+              let usedCoords = null;
+              try {
+                const coordsForORS = latlngs.map((ll) => [ll[1], ll[0]]); // [lng,lat]
+                const res = await fetch(
+                  "https://api.openrouteservice.org/v2/directions/driving-car/geojson",
+                  {
+                    method: "POST",
+                    headers: {
+                      Authorization: ORS_KEY,
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ coordinates: coordsForORS }),
+                  }
+                );
+                const data = await res.json();
+                if (
+                  data &&
+                  data.features &&
+                  data.features[0] &&
+                  data.features[0].geometry &&
+                  data.features[0].geometry.coordinates
+                ) {
+                  usedCoords = data.features[0].geometry.coordinates.map(
+                    (c) => [c[1], c[0]]
+                  );
+                }
+              } catch (e) {
+                console.debug("openRouteOverlay ORS driving-car failed", e);
+              }
+
+              // fallback to direct latlngs if ORS did not return a route
+              const drawCoords =
+                usedCoords && usedCoords.length > 0 ? usedCoords : latlngs;
+
+              // white base
+              overlayRouteLine = L.polyline(drawCoords, {
+                color: "#ffffff",
+                weight: 10,
+                opacity: 0.95,
+              }).addTo(map);
+              // green/colored thin line to indicate direction on top (or use subtle green)
+              overlayDirLine = L.polyline(drawCoords, {
+                color: "#00C853",
+                weight: 4,
+                dashArray: "",
+                opacity: 0.9,
+              }).addTo(map);
+              // ensure map view
+              try {
+                map.fitBounds(
+                  L.featureGroup([
+                    overlayRouteLine,
+                    overlayDirLine,
+                  ]).getBounds(),
+                  { padding: [40, 40] }
+                );
+              } catch (_) {}
+            })();
+            // Build overlayStopMarkers aligned with stops[] indices. Some stops may not have lat/lng;
+            // keep a placeholder (null) so data-idx in the HTML lines up with marker array indices.
+            overlayStopMarkers = new Array(stops.length).fill(null);
+            stops.forEach((s, idx) => {
+              if (s && s.lat && s.lng) {
+                const ll = [s.lat, s.lng];
+                // use the same icon as tra cứu bus markers so it shows a logo and scales with zoom
+                try {
+                  const m = L.marker(ll, {
+                    icon: createBusStopIcon(map.getZoom()),
+                    title: s.name || "",
+                  })
+                    .addTo(map)
+                    .bindPopup(s.name || "");
+                  overlayStopMarkers[idx] = m;
+                } catch (e) {
+                  console.debug("overlay marker create failed", e);
+                  overlayStopMarkers[idx] = null;
+                }
+              } else {
+                overlayStopMarkers[idx] = null;
+              }
+            });
+
+            // ensure overlay markers update when zoom changes (only add handler once)
+            if (!overlayZoomHandlerAdded) {
+              overlayZoomHandlerAdded = true;
+              map.on("zoomend", function () {
+                try {
+                  overlayStopMarkers.forEach((marker) => {
+                    try {
+                      if (marker)
+                        marker.setIcon(createBusStopIcon(map.getZoom()));
+                    } catch (_) {}
+                  });
+                } catch (_) {}
+              });
+            }
+          }
+
+          // prepare overlayWalkLine as an array so we can collect start/end connectors
+          overlayWalkLine = overlayWalkLine || [];
+
+          // if startCoord provided, and start is not essentially at a stop, draw walking connector
+          try {
+            if (
+              startCoord &&
+              startCoord.lat &&
+              startCoord.lng &&
+              latlngs.length > 0
+            ) {
+              let minDstart = Infinity,
+                nearestStartIdx = -1;
+              latlngs.forEach((ll, i) => {
+                const d = haversineMeters(
+                  ll[0],
+                  ll[1],
+                  startCoord.lat,
+                  startCoord.lng
+                );
+                if (d < minDstart) {
+                  minDstart = d;
+                  nearestStartIdx = i;
+                }
+              });
+              const WALK_THRESHOLD_M = 20;
+              if (nearestStartIdx >= 0 && minDstart > WALK_THRESHOLD_M) {
+                // draw connector from startCoord to nearestStart stop
+                (async () => {
+                  const ORS_KEY =
+                    "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImViNTU5Yzk4NzEzODRmMGRhYzBmOGRmYmI0OWYzNzEyIiwiaCI6Im11cm11cjY0In0=";
+                  const fromLat = startCoord.lat;
+                  const fromLng = startCoord.lng;
+                  const toLat = latlngs[nearestStartIdx][0];
+                  const toLng = latlngs[nearestStartIdx][1];
+                  try {
+                    const res = await fetch(
+                      "https://api.openrouteservice.org/v2/directions/foot-walking/geojson",
+                      {
+                        method: "POST",
+                        headers: {
+                          Authorization: ORS_KEY,
+                          "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                          coordinates: [
+                            [fromLng, fromLat],
+                            [toLng, toLat],
+                          ],
+                        }),
+                      }
+                    );
+                    const data = await res.json();
+                    let walkCoords = null;
+                    if (
+                      data &&
+                      data.features &&
+                      data.features[0] &&
+                      data.features[0].geometry
+                    ) {
+                      walkCoords = data.features[0].geometry.coordinates.map(
+                        (c) => [c[1], c[0]]
+                      );
+                    }
+                    if (!walkCoords || walkCoords.length === 0)
+                      throw new Error("no-route");
+
+                    const baseWalk = L.polyline(walkCoords, {
+                      color: "#ffffff",
+                      weight: 8,
+                      opacity: 0.95,
+                    }).addTo(map);
+                    const thinWalk = L.polyline(walkCoords, {
+                      color: "#616161",
+                      weight: 3,
+                      opacity: 0.95,
+                    }).addTo(map);
+                    overlayWalkLine = overlayWalkLine.concat([
+                      baseWalk,
+                      thinWalk,
+                    ]);
+                  } catch (e) {
+                    // fallback straight connector
+                    const baseWalk = L.polyline(
+                      [
+                        [fromLat, fromLng],
+                        [toLat, toLng],
+                      ],
+                      { color: "#ffffff", weight: 8, opacity: 0.95 }
+                    ).addTo(map);
+                    const thinWalk = L.polyline(
+                      [
+                        [fromLat, fromLng],
+                        [toLat, toLng],
+                      ],
+                      { color: "#616161", weight: 3, opacity: 0.95 }
+                    ).addTo(map);
+                    overlayWalkLine = overlayWalkLine.concat([
+                      baseWalk,
+                      thinWalk,
+                    ]);
+                  }
+                })();
+              }
+            }
+          } catch (e) {
+            console.debug("start connector error", e);
+          }
+
+          // if endCoord provided and not exactly near any stop, draw a white-centered walking connector
+          // We consider "near" to be within 60 meters — this makes short doorstep-like walks not draw
+          // but will draw the connector in most practical cases where user needs to walk to a stop.
+          if (endCoord && endCoord.lat && endCoord.lng) {
+            let minD = Infinity,
+              nearestIdx = -1;
+            latlngs.forEach((ll, i) => {
+              const d = haversineMeters(
+                ll[0],
+                ll[1],
+                endCoord.lat,
+                endCoord.lng
+              );
+              if (d < minD) {
+                minD = d;
+                nearestIdx = i;
+              }
+            });
+            // draw connector when destination isn't essentially at a stop (threshold 20m)
+            // small threshold so even short doorstep walks (e.g. 20m+) show the connector
+            const WALK_THRESHOLD_M = 20;
+            if (nearestIdx >= 0 && minD > WALK_THRESHOLD_M) {
+              const from = latlngs[nearestIdx];
+              // remove previous overlay walk lines
+              if (overlayWalkLine)
+                try {
+                  if (Array.isArray(overlayWalkLine))
+                    overlayWalkLine.forEach((l) => map.removeLayer(l));
+                  else map.removeLayer(overlayWalkLine);
+                } catch (_) {}
+
+              // prefer routing along walking paths using OpenRouteService so the line
+              // follows streets/paths (won't cut through buildings). If ORS fails, fall
+              // back to a straight connector.
+              (async () => {
+                const ORS_KEY =
+                  "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImViNTU5Yzk4NzEzODRmMGRhYzBmOGRmYmI0OWYzNzEyIiwiaCI6Im11cm11cjY0In0=";
+                const fromLng = from[1] || from[1];
+                const fromLat = from[0];
+                const toLng = endCoord.lng;
+                const toLat = endCoord.lat;
+                try {
+                  const res = await fetch(
+                    "https://api.openrouteservice.org/v2/directions/foot-walking/geojson",
+                    {
+                      method: "POST",
+                      headers: {
+                        Authorization: ORS_KEY,
+                        "Content-Type": "application/json",
+                      },
+                      body: JSON.stringify({
+                        coordinates: [
+                          [fromLng, fromLat],
+                          [toLng, toLat],
+                        ],
+                      }),
+                    }
+                  );
+                  const data = await res.json();
+                  let walkCoords = null;
+                  if (
+                    data &&
+                    data.features &&
+                    data.features[0] &&
+                    data.features[0].geometry
+                  ) {
+                    walkCoords = data.features[0].geometry.coordinates.map(
+                      (c) => [c[1], c[0]]
+                    );
+                  }
+                  if (!walkCoords || walkCoords.length === 0)
+                    throw new Error("no-route");
+
+                  // draw solid walk lines (white base + solid dark overlay)
+                  const baseWalk = L.polyline(walkCoords, {
+                    color: "#ffffff",
+                    weight: 8,
+                    opacity: 0.95,
+                  }).addTo(map);
+                  const thinWalk = L.polyline(walkCoords, {
+                    color: "#616161",
+                    weight: 3,
+                    opacity: 0.95,
+                  }).addTo(map);
+                  // ensure there's a connector from the walk geometry end to the exact destination
+                  let connector = null;
+                  try {
+                    const last = walkCoords[walkCoords.length - 1];
+                    if (last && (last[0] !== toLat || last[1] !== toLng)) {
+                      connector = L.polyline(
+                        [
+                          [last[0], last[1]],
+                          [toLat, toLng],
+                        ],
+                        { color: "#616161", weight: 3, opacity: 0.95 }
+                      ).addTo(map);
+                    }
+                  } catch (_) {}
+                  overlayWalkLine = overlayWalkLine.concat(
+                    connector
+                      ? [baseWalk, thinWalk, connector]
+                      : [baseWalk, thinWalk]
+                  );
+                } catch (e) {
+                  // fallback: straight connector
+                  const baseWalk = L.polyline(
+                    [
+                      [from[0], from[1]],
+                      [endCoord.lat, endCoord.lng],
+                    ],
+                    { color: "#ffffff", weight: 8, opacity: 0.95 }
+                  ).addTo(map);
+                  const thinWalk = L.polyline(
+                    [
+                      [from[0], from[1]],
+                      [endCoord.lat, endCoord.lng],
+                    ],
+                    { color: "#616161", weight: 3, opacity: 0.95 }
+                  ).addTo(map);
+                  // no extra connector needed because this fallback connects directly to dest
+                  overlayWalkLine = overlayWalkLine.concat([
+                    baseWalk,
+                    thinWalk,
+                  ]);
+                }
+
+                // update destination marker to ensure visible
+                try {
+                  if (endMarker) map.removeLayer(endMarker);
+                } catch (_) {}
+                endMarker = L.marker([endCoord.lat, endCoord.lng])
+                  .addTo(map)
+                  .bindPopup("Đi bộ tới điểm đến");
+              })();
+            }
+          }
+        })
+        .catch((e) => {
+          body.innerHTML =
+            '<div style="padding:12px;color:#666">Lỗi khi tải trạm: ' +
+            (e.message || e) +
+            "</div>";
+        });
+    }
+
+    function clearOverlayLayers() {
+      // stop any running overlay simulation
+      try {
+        stopOverlaySimulation();
+      } catch (_) {}
+      if (overlayRouteLine)
+        try {
+          map.removeLayer(overlayRouteLine);
+        } catch (_) {}
+      overlayRouteLine = null;
+      if (overlayDirLine)
+        try {
+          map.removeLayer(overlayDirLine);
+        } catch (_) {}
+      overlayDirLine = null;
+      if (overlayWalkLine)
+        try {
+          if (Array.isArray(overlayWalkLine)) {
+            overlayWalkLine.forEach((l) => {
+              try {
+                map.removeLayer(l);
+              } catch (_) {}
+            });
+          } else {
+            try {
+              map.removeLayer(overlayWalkLine);
+            } catch (_) {}
+          }
+        } catch (_) {}
+      overlayWalkLine = null;
+      overlayStopMarkers.forEach((m) => {
+        try {
+          if (m) map.removeLayer(m);
+        } catch (_) {}
+      });
+      overlayStopMarkers = [];
+    }
+
+    function closeRouteOverlay() {
+      if (routeOverlayEl) routeOverlayEl.style.display = "none";
+      clearOverlayLayers();
+      // clear any overlay-bound plan data
+      try {
+        delete window._overlayPlan;
+      } catch (_) {}
+      // restore any saved blue route layers that were hidden when overlay opened
+      try {
+        if (
+          Array.isArray(routeLineSavedLayers) &&
+          routeLineSavedLayers.length > 0
+        ) {
+          routeLineSavedLayers.forEach((ly) => {
+            try {
+              if (!map.hasLayer(ly)) map.addLayer(ly);
+            } catch (_) {}
+          });
+          routeLineSavedLayers = [];
+        }
+        // legacy single saved reference
+        if (routeLineSaved) {
+          try {
+            if (!map.hasLayer(routeLineSaved)) map.addLayer(routeLineSaved);
+          } catch (_) {}
+          routeLineSaved = null;
+        }
+      } catch (_) {}
+    }
+
+    function focusOverlayStop(idx) {
+      // click a stop in overlay -> center map and open popup
+      const body = document.getElementById("route-overlay-body");
+      const row =
+        body && body.querySelector(`.route-stop-row[data-idx="${idx}"]`);
+      if (!row) return;
+      // ensure marker exists; if not, but stop has coords, pan to coords and show popup
+      const m = overlayStopMarkers[idx];
+      if (m) {
+        map.setView(m.getLatLng(), 17);
+        try {
+          m.openPopup();
+        } catch (_) {}
+        return;
+      }
+      // fallback: use stops array coords if present
+      try {
+        const s =
+          (window._currentOverlayStops && window._currentOverlayStops[idx]) ||
+          null;
+        if (s && s.lat && s.lng) {
+          map.setView([s.lat, s.lng], 17);
+          // create a temporary popup marker that will be removed after close
+          const tmp = L.marker([s.lat, s.lng])
+            .addTo(map)
+            .bindPopup(s.name || "")
+            .openPopup();
+          // remove tmp marker when popup closes
+          try {
+            tmp.on("popupclose", function () {
+              try {
+                map.removeLayer(tmp);
+              } catch (_) {}
+            });
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+
+    // small Haversine helper (meters)
+    function haversineMeters(lat1, lon1, lat2, lon2) {
+      function toRad(x) {
+        return (x * Math.PI) / 180;
+      }
+      const R = 6371000;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) *
+          Math.cos(toRad(lat2)) *
+          Math.sin(dLon / 2) *
+          Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    // global helper: escape HTML to prevent injection when rendering stop names
+    function escapeHtml(s) {
+      if (s === null || s === undefined) return "";
+      return String(s).replace(/[&<>]/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c];
+      });
+    }
+
+    // --- Simulation helpers: move a marker along a polyline path at fixed speed (meters/sec)
+    function _computeSegmentDistances(latlngs) {
+      const seg = [];
+      let total = 0;
+      for (let i = 1; i < latlngs.length; i++) {
+        const d = haversineMeters(
+          latlngs[i - 1][0],
+          latlngs[i - 1][1],
+          latlngs[i][0],
+          latlngs[i][1]
+        );
+        seg.push(d);
+        total += d;
+      }
+      return { seg, total };
+    }
+
+    function _interpolateOnSegment(a, b, t) {
+      // linear interpolation between two latlngs (a,b), t in [0,1]
+      return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    }
+
+    function startOverlaySimulation() {
+      try {
+        // stop any existing sim
+        stopOverlaySimulation();
+        // collect path coordinates from overlayDirLine or overlayRouteLine
+        const poly = overlayDirLine || overlayRouteLine;
+        if (!poly || !poly.getLatLngs)
+          return alert("Không có đường để mô phỏng");
+        const latlngs = poly.getLatLngs().map((p) => [p.lat, p.lng]);
+        if (!latlngs || latlngs.length < 2)
+          return alert("Đường quá ngắn để mô phỏng");
+
+        const { seg, total } = _computeSegmentDistances(latlngs);
+        if (!total || total <= 0) return alert("Không thể tính độ dài tuyến");
+
+        // speed 35 km/h => meters per second
+        const speedMps = (35 * 1000) / 3600;
+        const sim = {
+          latlngs,
+          seg,
+          total,
+          speedMps,
+          distanceTravelled: 0,
+          direction: 1, // 1 forward, -1 back
+          marker: null,
+          timer: null,
+        };
+
+        // create moving marker
+        const start = latlngs[0];
+        sim.marker = L.marker(start, {
+          icon: L.divIcon({
+            className: "sim-marker",
+            html: '<div style="background:#ff5722;border-radius:50%;width:14px;height:14px;border:2px solid #fff;"></div>',
+            iconSize: [18, 18],
+            iconAnchor: [9, 9],
+          }),
+        }).addTo(map);
+        // place on top
+        sim.marker.setZIndexOffset(1000);
+
+        // tick function moves marker along path
+        const tickMs = 100; // 100ms
+        const tick = () => {
+          try {
+            sim.distanceTravelled +=
+              sim.speedMps * (tickMs / 1000) * sim.direction;
+            if (sim.distanceTravelled >= sim.total) {
+              // reached end -> reverse direction to go back
+              sim.distanceTravelled = sim.total;
+              sim.direction = -1;
+            } else if (sim.distanceTravelled <= 0) {
+              sim.distanceTravelled = 0;
+              sim.direction = 1;
+            }
+
+            // find segment
+            let d = sim.distanceTravelled;
+            let idx = 0;
+            while (idx < sim.seg.length && d > sim.seg[idx]) {
+              d -= sim.seg[idx];
+              idx++;
+            }
+            if (idx >= sim.seg.length) idx = sim.seg.length - 1;
+            const a = sim.latlngs[idx];
+            const b = sim.latlngs[idx + 1];
+            const t = sim.seg[idx] > 0 ? d / sim.seg[idx] : 0;
+            const pos = _interpolateOnSegment(a, b, t);
+            if (sim.marker) sim.marker.setLatLng(pos);
+          } catch (e) {
+            // ignore per-tick errors
+          }
+        };
+
+        sim.timer = setInterval(tick, tickMs);
+        overlaySim = sim;
+
+        // update button text
+        try {
+          const btn = document.getElementById("route-simulate-toggle");
+          if (btn) btn.textContent = "Dừng mô phỏng";
+        } catch (_) {}
+      } catch (e) {
+        console.warn("startOverlaySimulation error", e);
+      }
+    }
+
+    function stopOverlaySimulation() {
+      try {
+        if (!overlaySim) return;
+        if (overlaySim.timer) {
+          clearInterval(overlaySim.timer);
+        }
+        try {
+          if (overlaySim.marker) map.removeLayer(overlaySim.marker);
+        } catch (_) {}
+        overlaySim = null;
+        try {
+          const btn = document.getElementById("route-simulate-toggle");
+          if (btn) btn.textContent = "Mô phỏng 35 km/h";
+        } catch (_) {}
+      } catch (e) {
+        console.warn("stopOverlaySimulation error", e);
+      }
+    }
+
+    // Helper: open overlay for plan index (called from Chi tiết button)
+    function showPlanOverlayForPlan(idx) {
+      if (!window._lastPlan) return alert("Không có kết quả để hiển thị");
+      const p =
+        (window._lastPlan.alternatives && window._lastPlan.alternatives[idx]) ||
+        window._lastPlan;
+      // find first bus segment and route id or number
+      const busSeg = (p.steps || []).find((s) => s.type === "bus");
+      if (!busSeg) return alert("Kết quả không có tuyến xe để hiển thị");
+      // busSeg.route may be number or id; try to resolve route list
+      (async () => {
+        try {
+          const routes = await fetch("/api/bus/routes").then((r) => r.json());
+          // try match by routeNumber or id
+          let routeObj = routes.find(
+            (r) =>
+              String(r.routeNumber) === String(busSeg.route) ||
+              String(r.id) === String(busSeg.route)
+          );
+          if (!routeObj) routeObj = routes[0]; // fallback to first route
+          // determine end coordinate to allow walking suggestion
+          const endCoord =
+            p.endDropoff ||
+            (p.steps && p.steps.length
+              ? p.steps[p.steps.length - 1].toCoord || {
+                  lat: p.endLat,
+                  lng: p.endLng,
+                }
+              : null);
+          // determine startCoord if available in plan (startPickup or coords)
+          const startCoord =
+            (p.startPickup && {
+              lat: p.startPickup.lat,
+              lng: p.startPickup.lng,
+            }) ||
+            (p.startLat &&
+              p.startLng && { lat: p.startLat, lng: p.startLng }) ||
+            null;
+          // show overlay and ensure visible (pass startCoord so overlay trims stops)
+          // expose the selected plan/alternative so the overlay can render exact steps
+          try {
+            window._overlayPlan = p;
+          } catch (_) {}
+          // determine whether the plan corresponds to the return direction by
+          // checking stop ordering: if nearest start stop index > nearest end index
+          // then this is likely the "return" sequence.
+          (async () => {
+            let dir = "go";
+            try {
+              if (startCoord && endCoord) {
+                const stops = await fetch(
+                  `/api/bus/route/${routeObj.id}/stops`
+                ).then((r) => r.json());
+                if (Array.isArray(stops) && stops.length) {
+                  let minDs = Infinity,
+                    minDe = Infinity,
+                    startIdx = -1,
+                    endIdx = -1;
+                  stops.forEach((s, i) => {
+                    if (s && s.lat && s.lng) {
+                      const d1 = haversineMeters(
+                        s.lat,
+                        s.lng,
+                        startCoord.lat,
+                        startCoord.lng
+                      );
+                      if (d1 < minDs) {
+                        minDs = d1;
+                        startIdx = i;
+                      }
+                      const d2 = haversineMeters(
+                        s.lat,
+                        s.lng,
+                        endCoord.lat,
+                        endCoord.lng
+                      );
+                      if (d2 < minDe) {
+                        minDe = d2;
+                        endIdx = i;
+                      }
+                    }
+                  });
+                  if (startIdx >= 0 && endIdx >= 0 && startIdx > endIdx)
+                    dir = "return";
+                }
+              }
+            } catch (e) {
+              // fallback to go
+              dir = "go";
+            }
+            openRouteOverlay(routeObj.id, dir, endCoord, startCoord);
+          })();
+          if (routeOverlayEl) routeOverlayEl.style.display = "block";
+        } catch (e) {
+          alert("Lỗi khi lấy dữ liệu tuyến: " + (e.message || e));
+        }
+      })();
+    }
+
+    // open a route overlay for a given route id using the last plan context (if any)
+    function showRouteFromPlan(routeId) {
+      try {
+        const p = window._lastPlan || null;
+        const endCoord = p && p.endDropoff ? p.endDropoff : null;
+        const startCoord =
+          p && p.startPickup
+            ? { lat: p.startPickup.lat, lng: p.startPickup.lng }
+            : null;
+        // detect direction based on stop indices
+        (async () => {
+          try {
+            let dir = "go";
+            if (startCoord && endCoord) {
+              const stops = await fetch(`/api/bus/route/${routeId}/stops`).then(
+                (r) => r.json()
+              );
+              if (Array.isArray(stops) && stops.length) {
+                let minDs = Infinity,
+                  minDe = Infinity,
+                  startIdx = -1,
+                  endIdx = -1;
+                stops.forEach((s, i) => {
+                  if (s && s.lat && s.lng) {
+                    const d1 = haversineMeters(
+                      s.lat,
+                      s.lng,
+                      startCoord.lat,
+                      startCoord.lng
+                    );
+                    if (d1 < minDs) {
+                      minDs = d1;
+                      startIdx = i;
+                    }
+                    const d2 = haversineMeters(
+                      s.lat,
+                      s.lng,
+                      endCoord.lat,
+                      endCoord.lng
+                    );
+                    if (d2 < minDe) {
+                      minDe = d2;
+                      endIdx = i;
+                    }
+                  }
+                });
+                if (startIdx >= 0 && endIdx >= 0 && startIdx > endIdx)
+                  dir = "return";
+              }
+            }
+            openRouteOverlay(routeId, dir, endCoord, startCoord);
+            if (routeOverlayEl) routeOverlayEl.style.display = "block";
+          } catch (e) {
+            openRouteOverlay(routeId, "go", endCoord, startCoord);
+            if (routeOverlayEl) routeOverlayEl.style.display = "block";
+          }
+        })();
+      } catch (e) {
+        console.warn("showRouteFromPlan error", e);
+      }
+    }
+
+    async function findRoute() {
+      // clear previous search/route overlays so the map/UI return to initial state
+      resetSearchUI();
+
+      const startEl = document.getElementById("start");
+      const endEl = document.getElementById("end");
+      if (!startEl || !endEl || !startEl.value || !endEl.value) {
+        alert("Vui lòng nhập đầy đủ điểm xuất phát và điểm đến!");
+        return;
+      }
+
+      const startLoc = await resolveInputToLatLng("start");
+      const endLoc = await resolveInputToLatLng("end");
+      if (!startLoc) {
+        alert("Không tìm thấy điểm xuất phát!");
+        return;
+      }
+      if (!endLoc) {
+        alert("Không tìm thấy điểm đến!");
+        return;
+      }
+
+      // place simple markers while planning
+      if (startMarker)
+        try {
+          map.removeLayer(startMarker);
+        } catch (_) {}
+      if (endMarker)
+        try {
+          map.removeLayer(endMarker);
+        } catch (_) {}
+      startMarker = L.marker([startLoc.lat, startLoc.lng])
+        .addTo(map)
+        .bindPopup("Điểm xuất phát")
+        .openPopup();
+      endMarker = L.marker([endLoc.lat, endLoc.lng])
+        .addTo(map)
+        .bindPopup("Điểm đến");
+
+      // call backend planner
+      try {
+        const url = `/api/bus/plan?startLat=${startLoc.lat}&startLng=${startLoc.lng}&endLat=${endLoc.lat}&endLng=${endLoc.lng}`;
+        const res = await fetch(url);
+        const plan = await res.json();
+        if (!plan) {
+          alert("Không nhận được kết quả từ planner");
+          return;
+        }
+        console.log("planner result", plan);
+        // store last plan so UI can open details/alternatives
+        window._lastPlan = plan;
+        // render list of alternatives in sidebar like image 1
+        try {
+          // hide any text detail and show list
+          const detail = document.getElementById("route-detail");
+          if (detail) detail.style.display = "none";
+          const rl = document.getElementById("route-list");
+          if (rl) rl.style.display = "block";
+          renderPlanList(plan);
+        } catch (e) {
+          console.warn("renderPlanList error", e);
+        }
+        if (!plan.directFound) {
+          // show note but still render steps (may contain fallback note)
+          console.info("planner directFound=false");
+        }
+        renderPlan(plan);
+      } catch (e) {
+        console.error("planner error", e);
+        alert("Lỗi khi gọi planner: " + (e && e.message ? e.message : ""));
+      }
+    }
+
+    // Reset map/UI state from previous 'tra cứu' actions so new findRoute starts fresh
+    function resetSearchUI() {
+      try {
+        // hide any open route detail panel and show route list
+        const detail = document.getElementById("route-detail");
+        if (detail) {
+          detail.style.display = "none";
+          detail.innerHTML = "";
+        }
+        const rl = document.getElementById("route-list");
+        if (rl) {
+          rl.style.display = "block";
+          rl.innerHTML = "<h3>Tra cứu tuyến xe</h3>";
+        }
+
+        // remove route line drawn by showRouteWithDirection
+        try {
+          if (routeLine) {
+            map.removeLayer(routeLine);
+            routeLine = null;
+          }
+        } catch (_) {}
+
+        // remove any saved route layers (hidden when overlay opened)
+        try {
+          if (Array.isArray(routeLineSavedLayers)) {
+            routeLineSavedLayers.forEach((ly) => {
+              try {
+                if (map.hasLayer(ly)) map.removeLayer(ly);
+              } catch (_) {}
+            });
+          }
+          routeLineSavedLayers = [];
+          if (routeLineSaved) {
+            try {
+              if (map.hasLayer(routeLineSaved)) map.removeLayer(routeLineSaved);
+            } catch (_) {}
+            routeLineSaved = null;
+          }
+        } catch (_) {}
+
+        // remove bus markers and connectors
+        try {
+          if (Array.isArray(busMarkers)) {
+            busMarkers.forEach((m) => {
+              try {
+                map.removeLayer(m);
+              } catch (_) {}
+            });
+          }
+          busMarkers = [];
+          if (Array.isArray(connectorLines)) {
+            connectorLines.forEach((l) => {
+              try {
+                map.removeLayer(l);
+              } catch (_) {}
+            });
+          }
+          connectorLines = [];
+        } catch (_) {}
+
+        // clear plan layers and any auxiliary markers (including start/end)
+        try {
+          clearPlanLayers(false);
+        } catch (_) {}
+
+        // clear overlay-specific layers
+        try {
+          clearOverlayLayers();
+          if (routeOverlayEl) routeOverlayEl.style.display = "none";
+        } catch (_) {}
+
+        // restore the route list from server to initial
+        try {
+          loadRouteList();
+        } catch (_) {}
+      } catch (e) {
+        console.warn("resetSearchUI error", e);
+      }
+    }
+
+    // Thêm thanh tìm kiếm địa điểm phía trên bản đồ
+    const searchBar = document.createElement("div");
+    searchBar.id = "map-search-bar";
+    searchBar.innerHTML = `<input type="text" id="search-location" placeholder="Tìm địa điểm..." />`;
+    document.body.appendChild(searchBar);
+
+    // Sửa marker trạm dừng thành icon tròn viền xanh, hình xe buýt
+    function createBusStopIcon(zoom) {
+      // Nếu zoom nhỏ hơn 15 thì trả về icon chấm nhỏ
+      if (zoom < 15) {
+        return L.divIcon({
+          className: "custom-bus-marker-dot",
+          html: '<div class="bus-marker-dot"></div>',
+          iconSize: [14, 14],
+          iconAnchor: [7, 7],
+        });
+      }
+      // Nếu zoom lớn thì trả về icon xe buýt to hơn
+      return L.divIcon({
+        className: "custom-bus-marker",
+        html: `<div class=\"bus-marker-circle\"><img src=\"https://img.icons8.com/ios-filled/50/4CAF50/bus.png\" style=\"width:20px;height:20px;\"/></div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 28],
+      });
+    }
+
+    // Thêm CSS cho icon to hơn
+    const style5 = document.createElement("style");
+    style5.innerHTML = `
+.custom-bus-marker .bus-marker-circle {
+  background: #fff;
+  border: 2px solid #43a047;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+}
+.custom-bus-marker-dot .bus-marker-dot {
+  background: #43a047;
+  border-radius: 50%;
+  width: 14px;
+  height: 14px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+}
+`;
+    document.head.appendChild(style5);
+
+    // Thêm CSS hiện đại
+    const style = document.createElement("style");
+    style.innerHTML = `
+    #map-search-bar {
+      position: absolute;
+      top: 64px;
+      left: 390px;
+      z-index: 1200;
+      width: 350px;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.10);
+      padding: 8px 16px;
+    }
+    #map-search-bar input {
+      width: 100%;
+      border: none;
+      outline: none;
+      font-size: 16px;
+      background: transparent;
+    }
+    #sidebar-tabs {
+      display: flex;
+      margin-bottom: 12px;
+    }
+    .sidebar-tab {
+      flex: 1;
+      padding: 12px 0;
+      background: #f8f8f8;
+      border: none;
+      font-weight: bold;
+      color: #009688;
+      cursor: pointer;
+      border-radius: 8px 8px 0 0;
+      font-size: 18px;
+      transition: background 0.2s, color 0.2s;
+    }
+    .sidebar-tab.active {
+      background: #009688;
+      color: #fff;
+    }
+    .sidebar-tab-content {
+      padding: 0 8px;
+    }
+    #route-search {
+      width: 95%;
+      margin-bottom: 10px;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid #eee;
+      font-size: 16px;
+    }
+    .route-card {
+      display: flex;
+      align-items: center;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      padding: 14px 18px;
+      margin-bottom: 14px;
+      cursor: pointer;
+      border: 1px solid #e0e0e0;
+      transition: box-shadow 0.2s;
+    }
+    .route-card:hover {
+      box-shadow: 0 6px 24px rgba(0,0,0,0.12);
+    }
+    .route-card-icon {
+      margin-right: 16px;
+    }
+    .route-card-title {
+      font-weight: bold;
+      color: #009688;
+      font-size: 20px;
+    }
+    .route-number {
+      color: #43a047;
+    }
+    .route-card-desc {
+      font-size: 16px;
+      margin-bottom: 8px;
+    }
+    .route-card-meta {
+      font-size: 15px;
+      color: #444;
+      display: flex;
+      align-items: center;
+    }
+    .route-card-meta img {
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+    .custom-bus-marker .bus-marker-circle {
+      background: #fff;
+      border: 2px solid #43a047;
+      border-radius: 50%;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+    }
+    .custom-bus-marker-dot .bus-marker-dot {
+      background: #43a047;
+      border-radius: 50%;
+      width: 14px;
+      height: 14px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+    }
+  `;
+    document.head.appendChild(style);
+
+    // Thêm CSS cho timeline-dot xám và tab 'Trạm dừng' được highlight
+    const styleBusmap = document.createElement("style");
+    styleBusmap.innerHTML = `
+.timeline-dot.gray {
+  background: #bdbdbd !important;
+  box-shadow: 0 0 0 2px #bdbdbd !important;
+  border: 2px solid #fff !important;
+}
+.route-detail-tab.stop-tab.active {
+  background: #009688;
+  color: #fff;
+  font-weight: bold;
+  border-radius: 6px 6px 0 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.route-detail-tab {
+  background: #f8f8f8;
+  color: #222;
+  border: none;
+  outline: none;
+  font-size: 16px;
+  padding: 10px 18px;
+  margin-right: 2px;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.route-detail-tab:not(.active):hover {
+  background: #e0e0e0;
+}
+`;
+    document.head.appendChild(styleBusmap);
+
+    // Styles for the route search card UI (refined)
+    const routeCardStyle = document.createElement("style");
+    routeCardStyle.innerHTML = `
+    .route-search-card{background:#fff;border-radius:12px;padding:14px;box-shadow:0 6px 18px rgba(0,0,0,0.06)}
+    .route-input-row{display:flex;align-items:center;margin-bottom:12px;position:relative}
+    .route-input-icon{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-right:12px;font-size:18px}
+    .route-input-icon.start-icon{background:#e8f7ef;color:#007a52}
+    .route-input-icon.end-icon{background:#fff0f0;color:#d32f2f}
+    .route-input-row input{flex:1;padding:10px 44px 10px 0;border:none;border-bottom:1px dotted #dcdcdc;background:transparent;font-size:15px;color:#222}
+    .route-input-row input::placeholder{color:#9e9e9e}
+    /* swap button as a small square on the right */
+    .swap-btn{position:absolute;right:8px;top:8px;width:36px;height:36px;border-radius:8px;border:none;background:#009688;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.08)}
+    .route-actions-row{display:block;margin-top:8px}
+    .route-actions-top{display:flex;justify-content:space-between;align-items:center}
+    .count-label{font-weight:700;color:#222}
+    .toggle-row{display:flex;align-items:center}
+    .switch{position:relative;display:inline-block;width:44px;height:24px;margin-left:8px}
+    .switch input{display:none}
+    .slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#e0e0e0;border-radius:24px}
+    .slider:before{position:absolute;content:"";height:18px;width:18px;left:3px;top:3px;background:white;border-radius:50%;transition:0.2s}
+    .switch input:checked + .slider{background:#009688}
+    .switch input:checked + .slider:before{transform:translateX(20px)}
+    .count-buttons{display:flex;gap:12px;margin-top:12px;justify-content:center}
+    .count-btn{flex:0 0 auto;padding:10px 22px;border-radius:8px;border:1px solid #e6e6e6;background:#fafafa;cursor:pointer;font-weight:600}
+    .count-btn.active{background:#009688;color:#fff;border-color:#009688;box-shadow:inset 0 -3px 0 rgba(0,0,0,0.06)}
+    .route-search-actions{display:flex;justify-content:space-between;align-items:center;margin-top:14px}
+    .find-btn{background:#009688;color:#fff;padding:10px 18px;border:none;border-radius:8px;cursor:pointer}
+    .back-home{color:#009688;text-decoration:none;margin-left:8px}
+    `;
+    document.head.appendChild(routeCardStyle);
+
+    // suggestions CSS
+    const sugStyle = document.createElement("style");
+    sugStyle.innerHTML = `
+  .suggestions{position:relative;margin-top:6px}
+  .suggestion-item{background:#fff;padding:8px 10px;border-radius:6px;border:1px solid #eee;margin-bottom:6px;cursor:pointer}
+  .suggestion-item:hover{background:#f5f5f5}
+  `;
+    document.head.appendChild(sugStyle);
+
+    // overlay suggestions CSS
+    const overlaySug = document.createElement("style");
+    overlaySug.innerHTML = `
+  .overlay-suggestions{display:none;z-index:2000;background:#fff;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,0.12);overflow:hidden}
+  .suggestions-header{background:#f7f7f7;padding:8px 12px;font-weight:700;border-bottom:1px solid #eee;cursor:grab}
+  .suggestions-content{max-height:320px;overflow:auto;padding:10px}
+  .overlay-suggestions .suggestion-item{border:none;margin:6px 0;padding:10px;border-radius:6px}
+  `;
+    document.head.appendChild(overlaySug);
+
+    // Sửa CSS để map và sidebar vừa khung, không cần lăn chuột xuống
+    const styleFullScreen = document.createElement("style");
+    styleFullScreen.innerHTML = `
+body, html {
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+#sidebar {
+  height: 100vh;
+  overflow-y: auto;
+}
+#map {
+  width: calc(100% - 350px);
+  height: 100vh;
+  margin-left: 350px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+}
+#map-search-bar {
+  position: absolute;
+  top: 64px;
+  left: 390px;
+  z-index: 1200;
+  width: 350px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.10);
+  padding: 8px 16px;
+}
+`;
+    document.head.appendChild(styleFullScreen);
+
+    // Sửa CSS để bản đồ xích xuống 1 chút và thêm chú thích
+    const styleMapMargin = document.createElement("style");
+    styleMapMargin.innerHTML = `
+#map {
+  top: 56px !important;
+  height: calc(100vh - 56px) !important;
+}
+#map-legend {
+  position: absolute;
+  top: 12px;
+  left: 370px;
+  z-index: 1300;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+  padding: 6px 18px;
+  font-size: 15px;
+  color: #222;
+}
+`;
+    document.head.appendChild(styleMapMargin);
+    // (legend removed) -- map legend creation intentionally omitted
+
+    // --- Small JS helpers for route search UI ---
+    // swap start/end values
+    (function () {
+      const swap = function () {
+        const s = document.getElementById("start");
+        const e = document.getElementById("end");
+        if (!s || !e) return;
+        const tmp = s.value;
+        s.value = e.value;
+        e.value = tmp;
+      };
+      document.addEventListener("click", function (ev) {
+        if (ev.target && ev.target.id === "swapBtn") swap();
+        if (
+          ev.target &&
+          ev.target.classList &&
+          ev.target.classList.contains("count-btn")
+        ) {
+          document
+            .querySelectorAll(".count-btn")
+            .forEach((b) => b.classList.remove("active"));
+          ev.target.classList.add("active");
+        }
+      });
+    })();
+
+    // Autocomplete / suggestions using Nominatim
+    (function () {
+      const debounce = (fn, wait) => {
+        let t;
+        return (...args) => {
+          clearTimeout(t);
+          t = setTimeout(() => fn.apply(this, args), wait);
+        };
+      };
+      // cache recent queries to avoid repeated network calls
+      const _cache = {};
+      // controllers per input to abort inflight requests
+      const _controllers = {};
+      // default suggestions to show when input is empty (kept lightweight)
+      const DEFAULT_SUGGESTIONS = [
+        { display_name: "Bến xe An Sương" },
+        { display_name: "Bến xe Miền Đông" },
+        { display_name: "Bến Thành" },
+        { display_name: "Ga Sài Gòn" },
+        { display_name: "Sân bay Tân Sơn Nhất" },
+      ];
+
+      function makeList(id) {
+        let el = document.getElementById(id + "-suggestions");
+        if (el) return el;
+        el = document.createElement("div");
+        el.id = id + "-suggestions";
+        el.className = "suggestions overlay-suggestions";
+        // header for dragging
+        const header = document.createElement("div");
+        header.className = "suggestions-header";
+        header.textContent = "Gợi ý";
+        el.appendChild(header);
+        const content = document.createElement("div");
+        content.className = "suggestions-content";
+        el.appendChild(content);
+        document.body.appendChild(el);
+
+        // dragging
+        let isDown = false,
+          startX = 0,
+          startY = 0,
+          origX = 0,
+          origY = 0;
+        header.addEventListener("pointerdown", function (e) {
+          isDown = true;
+          startX = e.clientX;
+          startY = e.clientY;
+          const r = el.getBoundingClientRect();
+          origX = r.left;
+          origY = r.top;
+          header.setPointerCapture(e.pointerId);
+          e.preventDefault();
+        });
+        header.addEventListener("pointermove", function (e) {
+          if (!isDown) return;
+          const dx = e.clientX - startX;
+          const dy = e.clientY - startY;
+          el.style.left = origX + dx + "px";
+          el.style.top = origY + dy + "px";
+        });
+        header.addEventListener("pointerup", function (e) {
+          isDown = false;
+          try {
+            header.releasePointerCapture(e.pointerId);
+          } catch (_) {}
+        });
+
+        return el;
+      }
+
+      function showSuggestions(id, items) {
+        const box = makeList(id);
+        const content = box.querySelector(".suggestions-content");
+        content.innerHTML = "";
+        items.forEach((it) => {
+          const row = document.createElement("div");
+          row.className = "suggestion-item";
+          // rich content: icon + title + small address
+          row.innerHTML = `<div style="display:flex;gap:8px;align-items:flex-start"><div style="color:#d32f2f;font-size:18px">📍</div><div style="flex:1"><div style="font-weight:600">${escapeHtml(
+            it.display_name.split(",")[0] || it.display_name
+          )}</div><div style="font-size:12px;color:#666;margin-top:4px">${escapeHtml(
+            shorten(it.display_name, 80)
+          )}</div></div></div>`;
+          row.onclick = () => {
+            const input = document.getElementById(id);
+            input.value = it.display_name;
+            input.dataset.lat = it.lat;
+            input.dataset.lng = it.lon;
+            content.innerHTML = "";
+            box.style.display = "none";
+          };
+          content.appendChild(row);
+        });
+
+        // position box near input (absolute in body so it doesn't affect layout)
+        const input = document.getElementById(id);
+        const rect = input.getBoundingClientRect();
+        box.style.position = "absolute";
+        box.style.left = rect.left + window.scrollX + "px";
+        box.style.top = rect.bottom + window.scrollY + 8 + "px";
+        box.style.width = Math.max(280, rect.width) + "px";
+        box.style.display = "block";
+      }
+
+      function escapeHtml(s) {
+        return String(s).replace(
+          /[&<>]/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])
+        );
+      }
+      function shorten(s, n) {
+        return s.length > n ? s.slice(0, n - 1) + "…" : s;
+      }
+
+      function clearSuggestions(id) {
+        const b = document.getElementById(id + "-suggestions");
+        if (b) {
+          b.style.display = "none";
+          const content =
+            b.querySelector && b.querySelector(".suggestions-content");
+          if (content) content.innerHTML = "";
+          else b.innerHTML = "";
+        }
+      }
+
+      async function fetchPlaces(q, signal) {
+        if (!q) return [];
+        // return from cache if exists
+        if (_cache[q]) return _cache[q];
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+          q
+        )}&addressdetails=1&countrycodes=vn&limit=6`;
+        try {
+          const res = await fetch(url, {
+            signal,
+            headers: { Accept: "application/json" },
+          });
+          const data = await res.json();
+          // cache short queries for a short time
+          try {
+            _cache[q] = data;
+          } catch (_) {}
+          return data;
+        } catch (e) {
+          // if aborted, return empty silently
+          if (e && e.name === "AbortError") return [];
+          return [];
+        }
+      }
+
+      const handle = debounce(async function (ev) {
+        const id = ev.target.id;
+        const q = ev.target.value || "";
+        // clear any previous selected coords when editing
+        delete ev.target.dataset.lat;
+        delete ev.target.dataset.lng;
+
+        // when input is empty, show default suggestions (so clearing doesn't hide guidance)
+        if (!q || q.length < 1) {
+          // clear any selected coords while editing
+          // (we already deleted dataset.lat/lng above)
+          try {
+            const results = DEFAULT_SUGGESTIONS;
+            if (results && results.length > 0) showSuggestions(id, results);
+            else clearSuggestions(id);
+          } catch (_) {
+            clearSuggestions(id);
+          }
+          return;
+        }
+
+        // abort previous request for this input
+        if (_controllers[id]) {
+          try {
+            _controllers[id].abort();
+          } catch (_) {}
+        }
+        const controller = new AbortController();
+        _controllers[id] = controller;
+        const signal = controller.signal;
+
+        // remember the current query to avoid race conditions
+        const currentQuery = q;
+        const results = await fetchPlaces(q, signal);
+
+        // if input changed meanwhile, ignore these results
+        const el = document.getElementById(id);
+        if (!el || el.value !== currentQuery) return;
+
+        if (results && results.length > 0) showSuggestions(id, results);
+        else clearSuggestions(id);
+      }, 120);
+
+      ["start", "end"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener("input", handle);
+        el.addEventListener("blur", () =>
+          setTimeout(() => clearSuggestions(id), 180)
+        );
+        // on focus, if there is already text, fetch suggestions immediately
+        // if empty, show default suggestions
+        el.addEventListener("focus", async (ev) => {
+          const q = ev.target.value;
+          if (q && q.length >= 1) {
+            const results = await fetchPlaces(q);
+            if (results && results.length > 0) showSuggestions(id, results);
+          } else {
+            // show defaults on focus when empty
+            if (DEFAULT_SUGGESTIONS && DEFAULT_SUGGESTIONS.length > 0)
+              showSuggestions(id, DEFAULT_SUGGESTIONS);
+          }
+        });
+      });
+    })();
+  </script>
+  <link rel="stylesheet" href="/css/home.css" />
+  <link rel="stylesheet" href="/css/chitiet.css" />
+</section>

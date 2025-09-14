@@ -1,0 +1,612 @@
+<div th:fragment="headerSection">
+  <!-- Header fragment adapted from provided markup. Stylesheet is served from /css/header.css -->
+
+  <link rel="stylesheet" href="/css/login.css" />
+
+  <div class="page-wrapper">
+    <!-- Header -->
+    <header class="bm-header" role="banner">
+      <!-- Logo + Brand -->
+      <div class="bm-left">
+        <div class="bm-logo" aria-hidden="true">
+          <!-- Simple bus glyph -->
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <!-- Hình tổng thể + khoét kính/đèn bằng evenodd -->
+            <path
+              fill="currentColor"
+              fill-rule="evenodd"
+              d="
+               M6 4h12a3 3 0 0 1 3 3v7a2 2 0 0 1-2 2v1a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-1H9v1a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-1a2 2 0 0 1-2-2V7a3 3 0 0 1 3-3Z
+               M7 7.5h10a1.5 1.5 0 0 1 1.5 1.5v1H5.5V9A1.5 1.5 0 0 1 7 7.5Z
+               M8 14.75a1.25 1.25 0 1 1 0-2.5a1.25 1.25 0 0 1 0 2.5Z
+               M16 14.75a1.25 1.25 0 1 1 0-2.5a1.25 1.25 0 0 1 0 2.5Z
+             "
+            />
+          </svg>
+        </div>
+        <div class="bm-brand">BusCity</div>
+      </div>
+
+      <!-- Desktop controls -->
+      <nav class="bm-right" aria-label="Header controls">
+        <a href="#" class="login-link">Đăng nhập</a>
+        <div class="lang-toggle" role="group" aria-label="Chọn ngôn ngữ">
+          <span class="lang-badge active" aria-current="true">VI</span>
+          <span class="lang-badge">EN</span>
+        </div>
+        <span class="divider" aria-hidden="true"></span>
+        <div
+          class="city"
+          role="button"
+          tabindex="0"
+          aria-label="Chọn thành phố"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <path
+              d="M12 2a8 8 0 0 0-8 8c0 5 8 12 8 12s8-7 8-12a8 8 0 0 0-8-8Zm0 10.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5Z"
+            />
+          </svg>
+          TP Hồ Chí Minh
+        </div>
+      </nav>
+
+      <!-- Mobile hamburger -->
+      <button class="bm-burger" id="bmBurger" aria-label="Mở menu">
+        <svg
+          class="burger-icon"
+          viewBox="0 0 24 24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <rect x="4" y="6" width="16" height="2" rx="1" fill="white" />
+          <rect x="4" y="11" width="16" height="2" rx="1" fill="white" />
+          <rect x="4" y="16" width="16" height="2" rx="1" fill="white" />
+        </svg>
+      </button>
+    </header>
+
+    <!-- Mobile drawer -->
+    <aside class="bm-drawer" id="bmDrawer" aria-hidden="true">
+      <div class="drawer-header">
+        <strong>Tùy chọn</strong>
+        <button class="close" id="bmClose" aria-label="Đóng menu">Đóng</button>
+      </div>
+      <div class="stack">
+        <a href="#" class="login-link drawer-login">Đăng nhập</a>
+        <div class="lang-toggle" role="group" aria-label="Chọn ngôn ngữ">
+          <span class="lang-badge active" aria-current="true">VI</span>
+          <span class="lang-badge">EN</span>
+        </div>
+        <div
+          class="city"
+          role="button"
+          tabindex="0"
+          aria-label="Chọn thành phố"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <path
+              d="M12 2a8 8 0 0 0-8 8c0 5 8 12 8 12s8-7 8-12a8 8 0 0 0-8-8Zm0 10.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5Z"
+            />
+          </svg>
+          TP Hồ Chí Minh
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Fragment script: keep small, unobtrusive JS for mobile drawer -->
+  <script>
+    (function () {
+      const burger = document.getElementById("bmBurger");
+      const drawer = document.getElementById("bmDrawer");
+      const closeBtn = document.getElementById("bmClose");
+
+      if (!burger || !drawer || !closeBtn) return;
+
+      function openDrawer() {
+        drawer.classList.add("open");
+        drawer.setAttribute("aria-hidden", "false");
+      }
+
+      function closeDrawer() {
+        drawer.classList.remove("open");
+        drawer.setAttribute("aria-hidden", "true");
+      }
+
+      burger.addEventListener("click", openDrawer);
+      closeBtn.addEventListener("click", closeDrawer);
+
+      drawer.addEventListener("click", (e) => {
+        if (e.target === drawer) closeDrawer();
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeDrawer();
+      });
+    })();
+  </script>
+  <!-- Login / Register modal -->
+  <div
+    id="auth-modal"
+    style="
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.4);
+      z-index: 12000;
+      align-items: center;
+      justify-content: center;
+    "
+  >
+    <div
+      style="
+        width: 360px;
+        background: #fff;
+        border-radius: 10px;
+        padding: 16px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+        font-family: inherit;
+      "
+    >
+      <!-- Hero image at top of modal -->
+      <div
+        class="auth-hero"
+        style="
+          margin: -16px -16px 12px;
+          overflow: hidden;
+          border-top-left-radius: 10px;
+          border-top-right-radius: 10px;
+        "
+      >
+        <img
+          src="/image/logo/logologin.png"
+          alt="Bus"
+          style="display: block; width: 100%; height: 110px; object-fit: cover"
+        />
+      </div>
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 8px;
+        "
+      >
+        <strong id="auth-title">Đăng nhập</strong>
+        <button
+          id="auth-close"
+          class="auth-close-btn"
+          aria-label="Đóng"
+          title="Đóng"
+        >
+          ×
+        </button>
+      </div>
+      <div style="display: flex; gap: 8px; margin-bottom: 10px">
+        <button
+          id="auth-tab-login"
+          class="auth-tab active"
+          style="
+            flex: 1;
+            padding: 8px;
+            border-radius: 8px;
+            border: 1px solid #eee;
+            background: #f7f7f7;
+            cursor: pointer;
+          "
+        >
+          Đăng nhập
+        </button>
+        <button
+          id="auth-tab-register"
+          class="auth-tab"
+          style="
+            flex: 1;
+            padding: 8px;
+            border-radius: 8px;
+            border: 1px solid #eee;
+            background: #fff;
+            cursor: pointer;
+          "
+        >
+          Đăng ký
+        </button>
+      </div>
+      <div id="auth-body">
+        <form id="auth-login-form" style="display: block">
+          <input
+            id="auth-username"
+            placeholder="Tên đăng nhập (email hoặc tên)"
+            style="
+              width: 95%;
+              padding: 8px;
+              margin-bottom: 8px;
+              border: 1px solid #e6e6e6;
+              border-radius: 6px;
+            "
+          />
+          <input
+            id="auth-password"
+            type="password"
+            placeholder="Mật khẩu"
+            style="
+              width: 95%;
+              padding: 8px;
+              margin-bottom: 8px;
+              border: 1px solid #e6e6e6;
+              border-radius: 6px;
+            "
+          />
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+            "
+          >
+            <button
+              type="button"
+              id="auth-login-btn"
+              style="
+                background: var(--blue-dark);
+                color: white;
+                padding: 8px 12px;
+                border-radius: 8px;
+                border: none;
+                cursor: pointer;
+              "
+            >
+              Đăng nhập
+            </button>
+            <a
+              href="#"
+              id="auth-to-register"
+              style="font-size: 13px; color: #2e7d32"
+              >Chưa có tài khoản?</a
+            >
+          </div>
+        </form>
+        <form id="auth-register-form" style="display: none">
+          <input
+            id="reg-fullname"
+            placeholder="Họ và tên"
+            style="
+              width: 95%;
+              padding: 8px;
+              margin-bottom: 8px;
+              border: 1px solid #e6e6e6;
+              border-radius: 6px;
+            "
+          />
+          <input
+            id="reg-username"
+            placeholder="Tên đăng nhập"
+            style="
+              width: 95%;
+              padding: 8px;
+              margin-bottom: 8px;
+              border: 1px solid #e6e6e6;
+              border-radius: 6px;
+            "
+          />
+          <input
+            id="reg-password"
+            type="password"
+            placeholder="Mật khẩu"
+            style="
+              width: 95%;
+              padding: 8px;
+              margin-bottom: 8px;
+              border: 1px solid #e6e6e6;
+              border-radius: 6px;
+            "
+          />
+          <select
+            id="reg-role"
+            style="
+              width: 95%;
+              padding: 8px;
+              margin-bottom: 8px;
+              border: 1px solid #e6e6e6;
+              border-radius: 6px;
+            "
+          >
+            <option value="user">Người dùng</option>
+            <option value="student">Sinh viên</option>
+            <option value="school">Học sinh</option>
+          </select>
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+            "
+          >
+            <button
+              type="button"
+              id="auth-register-btn"
+              style="
+                background: #2e7d32;
+                color: white;
+                padding: 8px 12px;
+                border-radius: 8px;
+                border: none;
+                cursor: pointer;
+              "
+            >
+              Đăng ký
+            </button>
+            <a
+              href="#"
+              id="auth-to-login"
+              style="font-size: 13px; color: #2e7d32"
+              >Đã có tài khoản?</a
+            >
+          </div>
+        </form>
+      </div>
+      <div
+        id="auth-msg"
+        style="margin-top: 8px; color: #d32f2f; font-size: 13px"
+      ></div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const modal = document.getElementById("auth-modal");
+      const loginLinks = document.querySelectorAll(".login-link");
+      const drawerLogin = document.querySelectorAll(".drawer-login");
+      const closeBtn = document.getElementById("auth-close");
+      const tabLogin = document.getElementById("auth-tab-login");
+      const tabRegister = document.getElementById("auth-tab-register");
+      const loginForm = document.getElementById("auth-login-form");
+      const regForm = document.getElementById("auth-register-form");
+      const msg = document.getElementById("auth-msg");
+
+      function showModal(mode) {
+        msg.textContent = "";
+        if (mode === "register") {
+          tabRegister.classList.add("active");
+          tabLogin.classList.remove("active");
+          loginForm.style.display = "none";
+          regForm.style.display = "block";
+        } else {
+          tabLogin.classList.add("active");
+          tabRegister.classList.remove("active");
+          loginForm.style.display = "block";
+          regForm.style.display = "none";
+        }
+        modal.style.display = "flex";
+      }
+      function hideModal() {
+        modal.style.display = "none";
+      }
+
+      loginLinks.forEach((l) =>
+        l.addEventListener("click", (e) => {
+          // if auth flag set, this link is a user badge — ignore to allow badge click handler
+          if (l.dataset && l.dataset.auth === "true") return;
+          e.preventDefault();
+          showModal("login");
+        })
+      );
+      drawerLogin.forEach((l) =>
+        l.addEventListener("click", (e) => {
+          if (l.dataset && l.dataset.auth === "true") return;
+          e.preventDefault();
+          showModal("login");
+        })
+      );
+      closeBtn.addEventListener("click", hideModal);
+      tabLogin.addEventListener("click", () => showModal("login"));
+      tabRegister.addEventListener("click", () => showModal("register"));
+      document
+        .getElementById("auth-to-register")
+        .addEventListener("click", (e) => {
+          e.preventDefault();
+          showModal("register");
+        });
+      document
+        .getElementById("auth-to-login")
+        .addEventListener("click", (e) => {
+          e.preventDefault();
+          showModal("login");
+        });
+
+      async function updateHeaderUser() {
+        try {
+          const r = await fetch("/api/auth/me");
+          if (!r.ok) return;
+          const u = await r.json();
+          // replace all login links with user badge that toggles a small menu
+          document.querySelectorAll(".login-link").forEach((el) => {
+            const name = u.fullName || u.username || "Người dùng";
+            el.dataset.auth = "true"; // mark as authenticated
+            el.href = "#";
+            // render a simple badge only; the menu will be appended to document.body to avoid clipping
+            el.innerHTML = `
+              <span class="user-badge" style="display:inline-flex;align-items:center;gap:8px;cursor:pointer">
+                <span class="user-avatar" style="width:28px;height:28px;border-radius:50%;background:#fff;color:#2e7d32;display:inline-grid;place-items:center;font-weight:700">${(
+                  name || "U"
+                ).charAt(0)}</span>
+                <span class="user-name" style="font-weight:700;color:white;cursor:pointer">${name}</span>
+              </span>
+            `;
+
+            const badge = el.querySelector(".user-badge");
+
+            // ensure a single global menu element appended to body (avoid per-badge duplication)
+            let globalMenu = document.getElementById("user-menu-global");
+            if (!globalMenu) {
+              globalMenu = document.createElement("div");
+              globalMenu.id = "user-menu-global";
+              globalMenu.style.display = "none";
+              globalMenu.style.position = "absolute";
+              globalMenu.style.background = "white";
+              globalMenu.style.borderRadius = "6px";
+              globalMenu.style.boxShadow = "0 8px 20px rgba(0,0,0,0.15)";
+              globalMenu.style.padding = "8px";
+              globalMenu.style.zIndex = 13000;
+              globalMenu.innerHTML = `<button id="user-logout" style="display:block;width:100%;padding:8px;border:none;background:#fff;border-radius:4px;text-align:left;cursor:pointer">Đăng xuất</button>`;
+              document.body.appendChild(globalMenu);
+
+              // attach logout handler once
+              globalMenu
+                .querySelector("#user-logout")
+                .addEventListener("click", async (ev) => {
+                  ev.preventDefault();
+                  try {
+                    const res = await fetch("/api/auth/logout", {
+                      method: "POST",
+                    });
+                    // on success, restore login text and hide menus
+                    document.querySelectorAll(".login-link").forEach((x) => {
+                      x.dataset.auth = "";
+                      x.textContent = "Đăng nhập";
+                      x.href = "#";
+                    });
+                    globalMenu.style.display = "none";
+                  } catch (e) {
+                    /* ignore */
+                  }
+                });
+            }
+
+            // toggle menu position near the badge; append to body avoids ancestor clipping
+            if (badge) {
+              badge.addEventListener("click", (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                try {
+                  if (globalMenu.style.display === "block") {
+                    globalMenu.style.display = "none";
+                    return;
+                  }
+                  // show and position
+                  globalMenu.style.display = "block";
+                  // allow browser to compute width
+                  globalMenu.style.left = "0px";
+                  globalMenu.style.top = "0px";
+                  const rect = badge.getBoundingClientRect();
+                  const menuWidth = globalMenu.offsetWidth || 160;
+                  let left = rect.right - menuWidth + window.scrollX;
+                  if (left < 8) left = rect.left + window.scrollX;
+                  globalMenu.style.left = left + "px";
+                  globalMenu.style.top =
+                    rect.bottom + 8 + window.scrollY + "px";
+                } catch (_) {}
+              });
+            }
+          });
+
+          // add a single document listener to close the global user menu when clicking outside
+          if (!window._globalUserMenuListener) {
+            window._globalUserMenuListener = true;
+            document.addEventListener("click", (ev) => {
+              const globalMenu = document.getElementById("user-menu-global");
+              if (!globalMenu) return;
+              // if click not inside an open badge or the menu, hide it
+              if (
+                !ev.target.closest ||
+                (!ev.target.closest(".user-badge") &&
+                  !ev.target.closest("#user-menu-global"))
+              ) {
+                globalMenu.style.display = "none";
+              }
+            });
+          }
+        } catch (e) {}
+      }
+
+      // login handler
+      document
+        .getElementById("auth-login-btn")
+        .addEventListener("click", async () => {
+          msg.textContent = "";
+          const username = document
+            .getElementById("auth-username")
+            .value.trim();
+          const password = document.getElementById("auth-password").value;
+          if (!username || !password) {
+            msg.textContent = "Nhập đủ tên đăng nhập và mật khẩu";
+            return;
+          }
+          try {
+            const res = await fetch("/api/auth/login", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ username, password }),
+            });
+            if (!res.ok) {
+              msg.textContent = "Đăng nhập thất bại";
+              return;
+            }
+            await updateHeaderUser();
+            try {
+              const me = await fetch("/api/auth/me").then((r) => r.json());
+              if (me && me.role === "ADMIN") {
+                window.location.href = "/admin";
+                return;
+              }
+            } catch (_) {}
+            hideModal();
+          } catch (e) {
+            msg.textContent = "Lỗi mạng";
+          }
+        });
+
+      // register handler
+      document
+        .getElementById("auth-register-btn")
+        .addEventListener("click", async () => {
+          msg.textContent = "";
+          const fullName = document.getElementById("reg-fullname").value.trim();
+          const username = document.getElementById("reg-username").value.trim();
+          const password = document.getElementById("reg-password").value;
+          const role = document.getElementById("reg-role").value;
+          if (!username || !password) {
+            msg.textContent = "Nhập tên đăng nhập và mật khẩu";
+            return;
+          }
+          try {
+            const res = await fetch("/api/auth/register", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ username, password, fullName, role }),
+            });
+            if (res.status === 409) {
+              msg.textContent = "Tài khoản đã tồn tại";
+              return;
+            }
+            if (!res.ok) {
+              msg.textContent = "Đăng ký thất bại";
+              return;
+            }
+            await updateHeaderUser();
+            hideModal();
+          } catch (e) {
+            msg.textContent = "Lỗi mạng";
+          }
+        });
+
+      // on page load, try to set header if logged in
+      document.addEventListener("DOMContentLoaded", () => {
+        updateHeaderUser();
+      });
+    })();
+  </script>
+</div>
+
+<!-- styles moved to /css/login.css -->

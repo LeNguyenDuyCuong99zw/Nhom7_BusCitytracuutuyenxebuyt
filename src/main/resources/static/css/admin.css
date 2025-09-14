@@ -1,0 +1,213 @@
+/* Green-themed admin CSS for BusMap admin dashboard */
+:root {
+  --bg: #f3fbf6;
+  --panel: #ffffff;
+  --muted: #6b6f6a;
+  --accent: #2e7d32; /* primary green */
+  --accent-600: #258036;
+  --accent-700: #1f6b2b;
+  --danger: #e53935;
+  --shadow: 0 8px 20px rgba(20, 40, 20, 0.06);
+  --radius: 10px;
+  --gap: 12px;
+}
+
+body {
+  font-family: Inter, system-ui, -apple-system, Roboto, "Helvetica Neue", Arial;
+  background: linear-gradient(180deg, #f8fffa 0%, var(--bg) 100%);
+  color: #1b2220;
+  margin: 0;
+  padding: 0;
+}
+
+.container {
+  max-width: 1100px;
+  margin: 28px auto;
+  padding: 20px;
+}
+
+h2 {
+  color: var(--accent-700);
+  margin: 0 0 12px 0;
+}
+
+.btn {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+
+.btn:hover {
+  background: var(--accent-600);
+}
+
+.btn-del {
+  background: var(--danger);
+}
+
+.table-card {
+  background: var(--panel);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+th,
+td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #eef6ee;
+  text-align: left;
+}
+th {
+  background: transparent;
+  color: var(--accent-700);
+  font-weight: 600;
+}
+
+input,
+select {
+  padding: 8px 10px;
+  border: 1px solid #e6efe6;
+  border-radius: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.section-row {
+  display: flex;
+  gap: var(--gap);
+  align-items: center;
+}
+
+.small {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.preview-box {
+  background: linear-gradient(
+    90deg,
+    rgba(46, 125, 50, 0.06),
+    rgba(37, 128, 54, 0.03)
+  );
+  border: 1px solid rgba(46, 125, 50, 0.06);
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.note {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Sidebar collapse helpers */
+.admin-sidebar {
+  transition: width 180ms ease;
+}
+.admin-sidebar.collapsed {
+  width: 72px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.nav-item .icon {
+  width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--accent);
+  border-radius: 6px;
+}
+
+/* Grid helpers */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 12px;
+}
+.col-6 {
+  grid-column: span 6;
+}
+.col-4 {
+  grid-column: span 4;
+}
+.col-12 {
+  grid-column: span 12;
+}
+
+/* Form card */
+.form-card {
+  background: var(--panel);
+  padding: 14px;
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+.form-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.form-row > div {
+  flex: 1;
+}
+.label {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 6px;
+  display: block;
+}
+
+/* Responsive improvements for admin layout */
+@media (max-width: 900px) {
+  .admin-shell {
+    flex-direction: column;
+  }
+  .admin-sidebar {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+    overflow: auto;
+  }
+  .admin-sidebar.collapsed {
+    height: 56px;
+  }
+  .admin-main {
+    padding: 12px;
+  }
+  .grid {
+    grid-template-columns: repeat(6, 1fr);
+  }
+  .col-6 {
+    grid-column: span 6;
+  }
+}
+
+/* Responsive */
+@media (max-width: 800px) {
+  .container {
+    padding: 12px;
+  }
+  .section-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

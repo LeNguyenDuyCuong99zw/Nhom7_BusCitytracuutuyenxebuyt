@@ -1,0 +1,305 @@
+/* Styles for auth modal and user-menu (moved from header fragment) */
+#auth-modal,
+#auth-modal * {
+  box-sizing: border-box;
+}
+#auth-modal input,
+#auth-modal select,
+#auth-modal textarea {
+  max-width: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* Keep the login link as positioning context for the user menu */
+.login-link {
+  position: relative;
+}
+
+/* user menu styling */
+/* Styles for auth modal and user-menu (moved from header fragment) */
+#auth-modal,
+#auth-modal * {
+  box-sizing: border-box;
+}
+
+/* Modal card */
+#auth-modal > div {
+  width: 360px;
+  max-width: calc(100% - 40px);
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+/* Tabs */
+.auth-tab {
+  display: inline-block;
+  width: 50%;
+  text-align: center;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid #eee;
+  background: #fff;
+  font-weight: 600;
+}
+.auth-tab.active {
+  background: #f0f7f3;
+  color: #2e7d32;
+}
+
+/* Inputs */
+#auth-body input,
+#auth-body select,
+#auth-body textarea {
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border: 1px solid #e6e6e6;
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+}
+
+/* Buttons */
+#auth-login-btn,
+#auth-register-btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: none;
+  font-weight: 700;
+  cursor: pointer;
+}
+#auth-login-btn {
+  background: #2e7d32;
+  color: #fff;
+}
+#auth-register-btn {
+  background: #1976d2;
+  color: #fff;
+}
+
+/* Secondary link */
+#auth-body a {
+  color: #2e7d32;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+/* Message area */
+#auth-msg {
+  color: #d32f2f;
+  font-size: 13px;
+  min-height: 18px;
+}
+
+/* Keep the login link as positioning context for the user menu */
+.login-link {
+  position: relative;
+}
+
+/* user badge */
+.user-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.user-badge .avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  font-weight: 700;
+  background: #fff;
+  color: #2e7d32;
+}
+.user-name {
+  color: #fff;
+  font-weight: 700;
+}
+
+/* user menu styling */
+.user-menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 160px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.16);
+  padding: 6px;
+  z-index: 13000;
+}
+.user-menu button {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.user-menu button:hover {
+  background: #f7f7f7;
+}
+
+/* responsive modal: ensure it fits smaller screens */
+@media (max-width: 420px) {
+  #auth-modal > div {
+    width: calc(100% - 32px) !important;
+  }
+}
+
+/* small accessibility focus outline for buttons */
+#auth-login-btn:focus,
+#auth-register-btn:focus,
+.user-menu button:focus {
+  outline: 2px solid rgba(46, 125, 50, 0.18);
+}
+
+/* hero image in modal */
+.auth-hero img {
+  width: 100%;
+  height: 110px;
+  object-fit: cover;
+  display: block;
+}
+.auth-hero {
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+  overflow: hidden;
+}
+
+.auth-close-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #e53935; /* red */
+  color: #fff;
+  display: inline-grid;
+  place-items: center;
+  font-size: 18px;
+  line-height: 1;
+  border: none;
+  cursor: pointer;
+}
+.auth-close-btn:hover {
+  background: #d32f2f;
+}
+.auth-close-btn:focus {
+  outline: 3px solid rgba(229, 57, 53, 0.18);
+}
+
+/* responsive modal: ensure it fits smaller screens */
+@media (max-width: 420px) {
+  #auth-modal > div {
+    width: calc(100% - 32px) !important;
+  }
+}
+
+/* small accessibility focus outline for buttons */
+#auth-login-btn:focus,
+#auth-register-btn:focus,
+.user-menu button:focus {
+  outline: 2px solid rgba(46, 125, 50, 0.25);
+}
+
+/* ===== UX / UI small polish ===== */
+/* Modal inner card */
+#auth-modal > div {
+  transition: transform 180ms ease, opacity 180ms ease;
+  transform-origin: center top;
+}
+
+/* Tabs */
+.auth-tab {
+  font-weight: 600;
+  font-size: 14px;
+  color: #333;
+  border: 1px solid #eee;
+  background: #fff;
+  transition: background 120ms ease, color 120ms ease;
+}
+.auth-tab.active {
+  background: #2e7d32;
+  color: #fff;
+}
+.auth-tab:hover {
+  background: #f3f3f3;
+}
+
+/* Buttons */
+#auth-login-btn,
+#auth-register-btn {
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+#auth-login-btn:hover {
+  filter: brightness(0.98);
+}
+#auth-register-btn:hover {
+  filter: brightness(0.98);
+}
+
+/* Inputs */
+#auth-body input:focus,
+#auth-body select:focus {
+  border-color: #c8e6c9;
+  box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.06);
+}
+
+/* User badge */
+.user-badge {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.user-badge .user-name {
+  color: #fff;
+}
+.user-badge:hover {
+  opacity: 0.95;
+}
+
+/* User menu */
+.user-menu {
+  transition: opacity 140ms ease, transform 160ms ease;
+  opacity: 0;
+  transform: translateY(-6px);
+}
+.user-menu.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+.user-menu button {
+  background: transparent;
+  border: none;
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.user-menu button:hover {
+  background: #f6f6f6;
+}
+
+/* Ensure header login-link is inline-block so absolute menu positions correctly */
+.login-link {
+  display: inline-block;
+}
+
+/* Slightly reduce modal shadow on mobile */
+@media (max-width: 420px) {
+  #auth-modal > div {
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+  }
+}

@@ -1,0 +1,90 @@
+/* Sidebar offset from top to align with map top (adjust if map top changes) */
+#sidebar {
+  width: 350px;
+  height: calc(
+    100vh - 56px
+  ); /* decreased available height because of top gap */
+  overflow-y: auto;
+  background: #fff;
+  border-right: 1px solid #eee;
+  float: left;
+  padding: 16px 8px 16px 16px;
+  position: absolute;
+  left: 0;
+  top: 56px; /* keep a little more gap from top to match map top offset */
+  z-index: 1000;
+}
+#map {
+  margin-left: 350px;
+}
+/* Timeline style for stop list */
+.timeline {
+  position: relative;
+  margin-left: 18px;
+  padding-left: 10px;
+  border-left: 2px solid #bdbdbd;
+}
+.timeline-item {
+  display: flex;
+  align-items: flex-start;
+  position: relative;
+  min-height: 28px;
+}
+.timeline-dot {
+  width: 10px;
+  height: 10px;
+  background: #009688;
+  border-radius: 50%;
+  position: absolute;
+  left: -16px;
+  top: 6px;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px #bdbdbd;
+}
+.timeline-item.last .timeline-dot {
+  background: #009688;
+}
+.timeline-content {
+  margin-left: 10px;
+  padding-bottom: 2px;
+  font-size: 15px;
+}
+#controls {
+  margin-bottom: 10px;
+}
+.btn {
+  margin-left: 5px;
+}
+/* Thêm CSS cho tab chuyển chiều */
+.direction-tabs {
+  display: flex;
+  margin: 12px 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #f8f8f8;
+  border: 1px solid #eee;
+}
+.direction-tab {
+  flex: 1;
+  padding: 10px 0;
+  text-align: center;
+  cursor: pointer;
+  font-size: 16px;
+  color: #222;
+  background: #f8f8f8;
+  border: none;
+  outline: none;
+  transition: background 0.2s, color 0.2s;
+}
+.direction-tab.active {
+  background: #009688;
+  color: #fff;
+}
+.direction-tab:not(.active):hover {
+  background: #e0e0e0;
+}
+.timeline-dot.selected {
+  background: #009688 !important;
+  border: 2px solid #fff !important;
+  box-shadow: 0 0 0 2px #009688 !important;
+}
