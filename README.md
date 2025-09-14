@@ -1,5 +1,6 @@
 # Nhom7_BusCitytracuutuyenxebuyt
 
+Người commit code : Lê Nguyễn Duy Cường
 Nhóm 7 — Ứng dụng tra cứu tuyến xe buýt (BusCity)
 
 Mô tả ngắn: đây là mã nguồn do nhóm thực hiện cho đề tài "Xây dựng ứng dụng tra cứu tuyến xe buýt thông minh dành cho người dùng".
