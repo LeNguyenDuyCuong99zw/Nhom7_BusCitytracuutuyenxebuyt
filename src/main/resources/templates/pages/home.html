@@ -230,10 +230,11 @@
     <div class=\"route-detail-tabs\" style=\"margin-bottom:10px\">
       <button class=\"route-detail-tab schedule-tab\" onclick=\"switchRouteDetailTab('schedule')\">Biểu đồ giờ</button>
       <button class=\"route-detail-tab stop-tab active\" onclick=\"switchRouteDetailTab('stops')\">Trạm dừng</button>
-      <button class=\"route-detail-tab\">Thông tin</button>
+      <button class=\"route-detail-tab info-tab\" onclick=\"switchRouteDetailTab('info')\">Thông tin</button>
       <button class=\"route-detail-tab\">Đánh giá</button>
     </div>
     <div id=\"schedule-panel\" style=\"display:none;margin-top:12px\"></div>
+    <div id=\"info-panel\" style=\"display:none;margin-top:12px\"></div>
     <div id=\"stops-panel\" class=\"timeline\" style=\"margin-top:18px\">
       ${stops
         .map(
@@ -301,36 +302,217 @@
           // attach event handlers for the tabs (schedule/stop)
           window.switchRouteDetailTab = function (tab) {
             try {
+              // clear active state from all tabs
               document
                 .querySelectorAll(".route-detail-tab")
                 .forEach((b) => b.classList.remove("active"));
+
+              // mark the requested tab active by matching its class
               const els = document.querySelectorAll(".route-detail-tab");
-              // find the matching tab by text or class
               els.forEach((el) => {
                 if (
                   (tab === "schedule" &&
                     el.classList.contains("schedule-tab")) ||
-                  (tab === "stops" && el.classList.contains("stop-tab"))
-                )
+                  (tab === "stops" && el.classList.contains("stop-tab")) ||
+                  (tab === "info" && el.classList.contains("info-tab"))
+                ) {
                   el.classList.add("active");
+                }
               });
+
               const sp = document.getElementById("schedule-panel");
               const st = document.getElementById("stops-panel");
-              if (sp && st) {
+              const ip = document.getElementById("info-panel");
+              if (sp && st && ip) {
                 if (tab === "schedule") {
                   sp.style.display = "block";
                   st.style.display = "none";
+                  ip.style.display = "none";
                   showSchedule();
-                } else {
-                  // hide schedule panel when switching away
+                } else if (tab === "stops") {
+                  // hide schedule and info panels when showing stops
                   try {
                     sp.style.display = "none";
                   } catch (e) {}
+                  ip.style.display = "none";
                   st.style.display = "block";
+                } else if (tab === "info") {
+                  // hide others and show info panel
+                  try {
+                    sp.style.display = "none";
+                  } catch (e) {}
+                  st.style.display = "none";
+                  ip.style.display = "block";
+                  // populate info (uses closure variable `route` if present, or currentRoute)
+                  try {
+                    showRouteInfo();
+                  } catch (e) {
+                    console.warn("showRouteInfo failed", e);
+                  }
                 }
               }
             } catch (e) {
               console.warn("switchRouteDetailTab", e);
+            }
+          };
+
+          // render route informational details into #info-panel
+          window.showRouteInfo = async function () {
+            try {
+              const panel = document.getElementById("info-panel");
+              if (!panel) return;
+              panel.innerHTML =
+                '<div style="padding:8px;color:#666">Đang tải thông tin...</div>';
+
+              // Prefer to fetch authoritative route details from server
+              let routeObj = null;
+              try {
+                // attempt fetch by id if route and route.id available
+                const id =
+                  route && route.id
+                    ? route.id
+                    : currentRoute && currentRoute.id
+                    ? currentRoute.id
+                    : null;
+                if (id) {
+                  const res = await fetch(`/api/bus/route/${id}`);
+                  if (res && res.ok) routeObj = await res.json();
+                }
+              } catch (e) {
+                // ignore network errors and fallback to currentRoute
+              }
+
+              if (!routeObj) routeObj = route || currentRoute || {};
+
+              // build simple info HTML
+              const rows = [];
+              // add(k, v, highlightDot) -> highlightDot shows a small green dot to the left of the label
+              const add = (k, v, highlightDot) => {
+                if (v === null || v === undefined || String(v).trim() === "")
+                  return;
+                const dotHtml = highlightDot
+                  ? '<span style="display:inline-block;width:8px;height:8px;background:#00C853;border-radius:50%;margin-right:8px;vertical-align:middle"></span>'
+                  : "";
+                rows.push(
+                  `<div style="margin-bottom:8px"><div style="font-weight:700;color:#333">${dotHtml}${escapeHtml(
+                    k
+                  )}</div><div style="color:#555;margin-top:6px">${escapeHtml(
+                    String(v)
+                  )}</div></div>`
+                );
+              };
+
+              add(
+                "Tuyến số",
+                routeObj.routeNumber || routeObj.number || routeObj.id,
+                true
+              );
+              add("Tên tuyến", routeObj.routeName || routeObj.name || "", true);
+              add("Loại tuyến", routeObj.type || routeObj.routeType || "");
+              add(
+                "Số chuyến/ngày",
+                routeObj.tripsPerDay ||
+                  routeObj.trips ||
+                  routeObj.frequency ||
+                  ""
+              );
+              add(
+                "Công ty/Đơn vị",
+                routeObj.company || routeObj.operator || ""
+              );
+              add(
+                "Liên hệ đơn vị",
+                routeObj.operatorContact || routeObj.contact || ""
+              );
+              add(
+                "Giờ bắt đầu - kết thúc",
+                `${routeObj.startTime || routeObj.start_time || ""} - ${
+                  routeObj.endTime || routeObj.end_time || ""
+                }`,
+                true
+              );
+              add("Giá vé", routeObj.fare || "", true);
+              add("Ghi chú", routeObj.description || routeObj.note || "");
+
+              // show stops counts and optionally fetch full stop lists when absent
+              try {
+                let goStops = Array.isArray(routeObj.goStops)
+                  ? routeObj.goStops
+                  : null;
+                let returnStops = Array.isArray(routeObj.returnStops)
+                  ? routeObj.returnStops
+                  : null;
+
+                // if goStops or returnStops are not present, try to fetch from API endpoints
+                const id =
+                  routeObj.id ||
+                  routeObj.routeNumber ||
+                  routeObj.number ||
+                  (route && route.id) ||
+                  (currentRoute && currentRoute.id);
+                if ((!goStops || !returnStops) && id) {
+                  try {
+                    if (!goStops) {
+                      const res = await fetch(`/api/bus/route/${id}/stops`);
+                      if (res && res.ok) goStops = await res.json();
+                    }
+                  } catch (_) {}
+                  try {
+                    if (!returnStops) {
+                      const res2 = await fetch(
+                        `/api/bus/route/${id}/stops-return`
+                      );
+                      if (res2 && res2.ok) returnStops = await res2.json();
+                    }
+                  } catch (_) {}
+                }
+
+                // Render detailed lists similar to the provided screenshot: bullet + long comma-separated flow
+                if (Array.isArray(goStops) && goStops.length > 0) {
+                  // build a long inline paragraph with arrow separators
+                  const goNames = goStops
+                    .map((s) => (s && s.name) || String(s))
+                    .filter(Boolean);
+                  rows.push(`
+                    <div style="margin-top:10px;font-weight:700;color:#333;display:flex;align-items:center"><div style="width:8px;height:8px;background:#00C853;border-radius:50%;margin-right:8px"></div><div>Lượt đi (${
+                      goNames.length
+                    } trạm)</div></div>
+                    <div style="color:#555;margin-top:6px;line-height:1.45;white-space:normal">${escapeHtml(
+                      goNames.join(" → ")
+                    )}</div>
+                  `);
+                }
+                if (Array.isArray(returnStops) && returnStops.length > 0) {
+                  const retNames = returnStops
+                    .map((s) => (s && s.name) || String(s))
+                    .filter(Boolean);
+                  rows.push(`
+                    <div style="margin-top:12px;font-weight:700;color:#333;display:flex;align-items:center"><div style="width:8px;height:8px;background:#00C853;border-radius:50%;margin-right:8px"></div><div>Lượt về (${
+                      retNames.length
+                    } trạm)</div></div>
+                    <div style="color:#555;margin-top:6px;line-height:1.45;white-space:normal">${escapeHtml(
+                      retNames.join(" → ")
+                    )}</div>
+                  `);
+                }
+              } catch (_) {}
+
+              if (rows.length === 0)
+                panel.innerHTML =
+                  '<div style="padding:12px;color:#666">Không có thông tin chi tiết cho tuyến này.</div>';
+              else
+                panel.innerHTML = `<div style="padding:6px">${rows.join(
+                  ""
+                )}</div>`;
+            } catch (e) {
+              try {
+                const panel = document.getElementById("info-panel");
+                if (panel)
+                  panel.innerHTML =
+                    '<div style="padding:12px;color:#666">Lỗi khi tải thông tin: ' +
+                    (e && e.message ? e.message : e) +
+                    "</div>";
+              } catch (_) {}
             }
           };
 
@@ -3054,7 +3236,9 @@
   box-shadow: 0 0 0 2px #bdbdbd !important;
   border: 2px solid #fff !important;
 }
-.route-detail-tab.stop-tab.active {
+.route-detail-tab.stop-tab.active,
+.route-detail-tab.info-tab.active,
+.route-detail-tab.schedule-tab.active {
   background: #009688;
   color: #fff;
   font-weight: bold;
