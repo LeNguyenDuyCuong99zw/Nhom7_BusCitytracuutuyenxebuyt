@@ -18,6 +18,33 @@
           <div class="route-input-row">
             <div class="route-input-icon start-icon">📍</div>
             <input id="start" type="text" placeholder="Chọn điểm xuất phát" />
+            <!-- current location button (SVG icon + spinner) -->
+            <button
+              id="curLocationBtn"
+              class="cur-loc-btn"
+              title="Sử dụng vị trí hiện tại"
+              onclick="useCurrentLocation('start','curLocationBtn')"
+            >
+              <span class="cur-loc-icon" aria-hidden="true">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"
+                    fill="#fff"
+                  />
+                </svg>
+              </span>
+              <span
+                class="cur-loc-spinner"
+                aria-hidden="true"
+                style="display: none"
+              ></span>
+            </button>
             <button id="swapBtn" class="swap-btn" title="Đổi chiều">⇅</button>
           </div>
           <div class="route-input-row">
@@ -960,6 +987,155 @@
       } else {
         alert("Trình duyệt không hỗ trợ định vị.");
       }
+    }
+
+    // helper to toggle loading spinner on a button
+    function setButtonLoading(btnId, isLoading) {
+      try {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+        const icon = btn.querySelector(".cur-loc-icon");
+        const spinner = btn.querySelector(".cur-loc-spinner");
+        if (isLoading) {
+          btn.disabled = true;
+          if (icon) icon.style.display = "none";
+          if (spinner) spinner.style.display = "inline-block";
+        } else {
+          btn.disabled = false;
+          if (icon) icon.style.display = "inline-flex";
+          if (spinner) spinner.style.display = "none";
+        }
+      } catch (e) {}
+    }
+
+    // improved wrapper to show loading spinner while attempting to get current location
+    // - checks permission state when available
+    // - provides clearer error messages
+    // - falls back to IP-based geolocation (less accurate) when user agrees
+    function useCurrentLocation(inputId, btnId) {
+      (async function () {
+        try {
+          setButtonLoading(btnId, true);
+
+          if (!navigator.geolocation) {
+            alert("Trình duyệt không hỗ trợ định vị.");
+            setButtonLoading(btnId, false);
+            return;
+          }
+
+          // If permission was previously denied, warn the user with a helpful message
+          if (navigator.permissions && navigator.permissions.query) {
+            try {
+              const status = await navigator.permissions.query({
+                name: "geolocation",
+              });
+              if (status && status.state === "denied") {
+                alert(
+                  "Quyền truy cập vị trí đã bị chặn. Vui lòng bật quyền vị trí cho trang này trong cài đặt trình duyệt."
+                );
+                setButtonLoading(btnId, false);
+                return;
+              }
+            } catch (e) {
+              // ignore permission query failures
+            }
+          }
+
+          // Try to get a high-accuracy current position with a reasonable timeout
+          const pos = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true,
+              timeout: 15000,
+              maximumAge: 60000,
+            });
+          });
+
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+
+          // Reverse-geocode using Nominatim (same as setCurrentLocation)
+          try {
+            const r = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+            );
+            if (r && r.ok) {
+              const data = await r.json();
+              const val = data.display_name || `${lat},${lng}`;
+              const el = document.getElementById(inputId);
+              if (el) el.value = val;
+              setButtonLoading(btnId, false);
+              return;
+            }
+          } catch (e) {
+            console.warn("Reverse geocode failed", e);
+          }
+
+          // fallback: set raw coordinates if reverse geocode failed
+          const el = document.getElementById(inputId);
+          if (el) el.value = `${lat},${lng}`;
+          setButtonLoading(btnId, false);
+          return;
+        } catch (err) {
+          console.warn("useCurrentLocation error", err);
+          // Map GeolocationPositionError codes to friendly messages
+          let msg = "Không thể truy cập vị trí hiện tại!";
+          if (err && err.code) {
+            if (err.code === 1)
+              msg =
+                "Quyền truy cập vị trí bị từ chối. Vui lòng cho phép vị trí cho trang này.";
+            else if (err.code === 2)
+              msg = "Không tìm thấy vị trí của bạn (POSITION_UNAVAILABLE).";
+            else if (err.code === 3)
+              msg = "Quá thời gian chờ lấy vị trí. Vui lòng thử lại.";
+          }
+
+          // Offer IP-based fallback (less accurate) to help users who blocked geolocation
+          try {
+            const useIp = confirm(
+              msg +
+                "\nBạn muốn thử xác định vị trí bằng địa chỉ IP (ít chính xác)?"
+            );
+            if (useIp) {
+              try {
+                const r = await fetch("https://ipapi.co/json/");
+                if (r && r.ok) {
+                  const ipd = await r.json();
+                  const lat = ipd.latitude || ipd.lat || null;
+                  const lng = ipd.longitude || ipd.lon || ipd.lng || null;
+                  if (lat && lng) {
+                    try {
+                      const rr = await fetch(
+                        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+                      );
+                      if (rr && rr.ok) {
+                        const data = await rr.json();
+                        const val = data.display_name || `${lat},${lng}`;
+                        const el = document.getElementById(inputId);
+                        if (el) el.value = val;
+                        setButtonLoading(btnId, false);
+                        return;
+                      }
+                    } catch (e) {
+                      console.warn("IP reverse geocode failed", e);
+                    }
+                    const el = document.getElementById(inputId);
+                    if (el) el.value = `${lat},${lng}`;
+                    setButtonLoading(btnId, false);
+                    return;
+                  }
+                }
+                alert("Không thể lấy vị trí từ địa chỉ IP.");
+              } catch (e) {
+                alert("Không thể lấy vị trí từ địa chỉ IP.");
+              }
+            }
+          } catch (e) {
+            console.warn("fallback flow failed", e);
+          }
+
+          setButtonLoading(btnId, false);
+        }
+      })();
     }
 
     function geocode(address, callback) {
@@ -3274,7 +3450,13 @@
     .route-input-row input{flex:1;padding:10px 44px 10px 0;border:none;border-bottom:1px dotted #dcdcdc;background:transparent;font-size:15px;color:#222}
     .route-input-row input::placeholder{color:#9e9e9e}
     /* swap button as a small square on the right */
-    .swap-btn{position:absolute;right:8px;top:8px;width:36px;height:36px;border-radius:8px;border:none;background:#009688;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.08)}
+  .swap-btn{position:absolute;right:8px;top:8px;width:36px;height:36px;border-radius:8px;border:none;background:#009688;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.08)}
+  /* current location button icon + spinner */
+  .cur-loc-btn{position:absolute;right:52px;top:8px;width:36px;height:36px;border-radius:8px;border:none;background:#00BFA5;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.08)}
+  .cur-loc-btn .cur-loc-icon{display:inline-flex;align-items:center;justify-content:center}
+  .cur-loc-btn .cur-loc-spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.9s linear infinite;display:inline-block}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .cur-loc-btn{position:absolute;right:52px;top:8px;width:36px;height:36px;border-radius:8px;border:none;background:#00BFA5;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.08)}
     .route-actions-row{display:block;margin-top:8px}
     .route-actions-top{display:flex;justify-content:space-between;align-items:center}
     .count-label{font-weight:700;color:#222}
